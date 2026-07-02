@@ -28,7 +28,7 @@
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <p class="series-label">机器学习 / 深度学习 / LLM Post-training</p>
+          <p class="series-label">机器学习 / 深度学习 / LLM 后训练</p>
           <h1>从梯度下降到 GPT</h1>
           <p class="hero-intro">
             给会写 Python、想快速建立大语言模型训练直觉的读者：用 20
@@ -36,7 +36,7 @@
             Transformer、GPT、SFT、PPO、DPO、GRPO 串成一条能跑起来的学习路径。
           </p>
           <div class="hero-actions" aria-label="主要入口">
-            <a class="primary-link" href="#chapters">进入专栏</a>
+            <a class="primary-link" href="#chapters">进入章节列表</a>
             <a class="secondary-link" href="#experiments">查看实验命令</a>
           </div>
         </div>
@@ -70,7 +70,7 @@
 
       <section class="section-grid" id="route" aria-labelledby="route-title">
         <div>
-          <p class="section-kicker">Learning Spine</p>
+          <p class="section-kicker">学习主线</p>
           <h2 id="route-title">这套专栏只保留通往 LLM 的必要地基</h2>
         </div>
         <div class="spine-copy">
@@ -78,6 +78,24 @@
             前半段不做机器学习百科，而是围绕“数据进入模型，损失衡量错误，梯度更新参数”
             这条主线反复强化。后半段把注意力机制、Transformer、GPT 训练目标和偏好优化放到同一张图里理解。
           </p>
+          <div class="circuit-diagram" aria-label="从训练闭环到后训练的路径示意">
+            <div>
+              <strong>数据</strong>
+              <span>x / y / token</span>
+            </div>
+            <div>
+              <strong>前向传播</strong>
+              <span>CNN / RNN / GPT</span>
+            </div>
+            <div>
+              <strong>损失函数</strong>
+              <span>CE / mask / preference</span>
+            </div>
+            <div>
+              <strong>参数更新</strong>
+              <span>SGD / Adam / policy</span>
+            </div>
+          </div>
           <div class="principles">
             <article>
               <span>01</span>
@@ -98,9 +116,26 @@
         </div>
       </section>
 
+      <section class="chapters" id="chapters" aria-labelledby="chapters-title">
+        <div class="section-heading">
+          <p class="section-kicker">章节目录</p>
+          <h2 id="chapters-title">20 章路线</h2>
+        </div>
+        <div class="chapter-layout">
+          <div class="phase-tabs" aria-label="按阶段筛选章节">
+            <button class="phase-tab is-active" type="button" data-phase="all">全部</button>
+            <button class="phase-tab" type="button" data-phase="foundation">最小地基</button>
+            <button class="phase-tab" type="button" data-phase="sequence">视觉与序列</button>
+            <button class="phase-tab" type="button" data-phase="transformer">Transformer</button>
+            <button class="phase-tab" type="button" data-phase="post-training">Post-training</button>
+          </div>
+          <div class="chapter-list" id="chapter-list"></div>
+        </div>
+      </section>
+
       <section class="featured" aria-labelledby="featured-title">
         <div class="section-heading">
-          <p class="section-kicker">Featured</p>
+          <p class="section-kicker">先读这几章</p>
           <h2 id="featured-title">四个最值得先看的节点</h2>
         </div>
         <div class="featured-grid">
@@ -127,29 +162,12 @@
         </div>
       </section>
 
-      <section class="chapters" id="chapters" aria-labelledby="chapters-title">
-        <div class="section-heading">
-          <p class="section-kicker">Chapters</p>
-          <h2 id="chapters-title">20 章路线</h2>
-        </div>
-        <div class="chapter-layout">
-          <div class="phase-tabs" role="tablist" aria-label="按阶段筛选章节">
-            <button class="phase-tab is-active" type="button" data-phase="all">全部</button>
-            <button class="phase-tab" type="button" data-phase="foundation">最小地基</button>
-            <button class="phase-tab" type="button" data-phase="sequence">视觉与序列</button>
-            <button class="phase-tab" type="button" data-phase="transformer">Transformer</button>
-            <button class="phase-tab" type="button" data-phase="post-training">Post-training</button>
-          </div>
-          <div class="chapter-list" id="chapter-list"></div>
-        </div>
-      </section>
-
       <section class="experiments" id="experiments" aria-labelledby="experiments-title">
         <div class="experiment-copy">
-          <p class="section-kicker">Run It</p>
+          <p class="section-kicker">跑通实验</p>
           <h2 id="experiments-title">文章和代码是一一对应的</h2>
           <p>
-            本专栏的第一目标是让读者把核心训练循环跑通。项目使用 `uv` 管理环境，
+            本专栏的第一目标是让读者把核心训练循环跑通。项目使用 <code>uv</code> 管理环境，
             smoke test 会覆盖从手写梯度到 mini-GPT 生成的关键闭环。
           </p>
         </div>
@@ -169,7 +187,7 @@ uv run python -m llm_tutor.experiments.run_capstone_pipeline</code></pre>
 
       <section class="code-map" aria-labelledby="code-map-title">
         <div class="section-heading">
-          <p class="section-kicker">Code Map</p>
+          <p class="section-kicker">代码入口</p>
           <h2 id="code-map-title">核心代码入口</h2>
         </div>
         <div class="code-map-grid">
@@ -194,7 +212,7 @@ uv run python -m llm_tutor.experiments.run_capstone_pipeline</code></pre>
 
       <section class="references" id="references" aria-labelledby="references-title">
         <div>
-          <p class="section-kicker">Aesthetic References</p>
+          <p class="section-kicker">参考风格</p>
           <h2 id="references-title">参考的知识分享站点气质</h2>
         </div>
         <ul>

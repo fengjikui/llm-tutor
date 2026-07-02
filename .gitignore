@@ -9,4 +9,14 @@ __pycache__/
 /data/
 /outputs/
 /checkpoints/
+runs/
+logs/
+wandb/
+mlruns/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npy
+*.npz
 *.egg-info/

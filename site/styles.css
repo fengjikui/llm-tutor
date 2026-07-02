@@ -290,6 +290,56 @@ h1 {
   gap: 12px;
 }
 
+.circuit-diagram {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(11, 127, 147, 0.2), rgba(182, 109, 18, 0.2)),
+    rgba(255, 254, 250, 0.72);
+}
+
+.circuit-diagram::before {
+  position: absolute;
+  top: 50%;
+  right: 34px;
+  left: 34px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  content: "";
+}
+
+.circuit-diagram div {
+  position: relative;
+  z-index: 1;
+  min-height: 94px;
+  padding: 14px;
+  border: 1px solid rgba(216, 211, 200, 0.9);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.circuit-diagram strong,
+.circuit-diagram span {
+  display: block;
+}
+
+.circuit-diagram strong {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.circuit-diagram span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .principles article {
   display: grid;
   grid-template-columns: 44px 1fr;
@@ -511,8 +561,12 @@ pre {
 
 code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 14px;
+  font-size: 0.92em;
   line-height: 1.8;
+}
+
+pre code {
+  font-size: 14px;
   color: #e8f6f8;
 }
 
@@ -606,8 +660,37 @@ code {
     padding: 22px;
   }
 
+  h1 {
+    font-size: 48px;
+    line-height: 1;
+  }
+
+  .hero {
+    gap: 24px;
+    padding-bottom: 28px;
+  }
+
+  .hero-intro {
+    margin-bottom: 22px;
+    font-size: 15px;
+    line-height: 1.68;
+  }
+
+  .route-steps {
+    gap: 14px;
+  }
+
   .route-line {
     left: 44px;
+  }
+
+  .circuit-diagram {
+    grid-template-columns: 1fr 1fr;
+    padding: 12px;
+  }
+
+  .circuit-diagram::before {
+    display: none;
   }
 
   .chapter-layout {
