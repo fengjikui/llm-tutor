@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="从机器学习训练闭环到 Transformer、GPT、SFT、PPO、DPO、GRPO 的中文动手教程专栏。"
+    />
+    <title>从梯度下降到 GPT | Jikui Notes</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="#route">路线</a>
+        <a href="#chapters">章节</a>
+        <a href="#experiments">实验</a>
+        <a href="#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor">GitHub</a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="series-label">机器学习 / 深度学习 / LLM Post-training</p>
+          <h1>从梯度下降到 GPT</h1>
+          <p class="hero-intro">
+            给会写 Python、想快速建立大语言模型训练直觉的读者：用 20
+            章中文教程和 PyTorch 实验，把损失函数、反向传播、CNN、RNN、Attention、
+            Transformer、GPT、SFT、PPO、DPO、GRPO 串成一条能跑起来的学习路径。
+          </p>
+          <div class="hero-actions" aria-label="主要入口">
+            <a class="primary-link" href="#chapters">进入专栏</a>
+            <a class="secondary-link" href="#experiments">查看实验命令</a>
+          </div>
+        </div>
+
+        <aside class="route-panel" aria-label="课程路线图">
+          <div class="route-line" aria-hidden="true"></div>
+          <ol class="route-steps">
+            <li>
+              <span>01-05</span>
+              <strong>训练闭环</strong>
+              <small>loss / gradient / PyTorch / 神经网络基础</small>
+            </li>
+            <li>
+              <span>06-10</span>
+              <strong>视觉与序列</strong>
+              <small>CNN / RNN / LSTM / GRU / Seq2Seq / Attention</small>
+            </li>
+            <li>
+              <span>11-15</span>
+              <strong>Transformer 到 GPT</strong>
+              <small>self-attention / block / decoder-only / pretraining</small>
+            </li>
+            <li>
+              <span>16-20</span>
+              <strong>Post-training</strong>
+              <small>SFT / PPO / DPO / GRPO / Mini LLM Pipeline</small>
+            </li>
+          </ol>
+        </aside>
+      </section>
+
+      <section class="section-grid" id="route" aria-labelledby="route-title">
+        <div>
+          <p class="section-kicker">Learning Spine</p>
+          <h2 id="route-title">这套专栏只保留通往 LLM 的必要地基</h2>
+        </div>
+        <div class="spine-copy">
+          <p>
+            前半段不做机器学习百科，而是围绕“数据进入模型，损失衡量错误，梯度更新参数”
+            这条主线反复强化。后半段把注意力机制、Transformer、GPT 训练目标和偏好优化放到同一张图里理解。
+          </p>
+          <div class="principles">
+            <article>
+              <span>01</span>
+              <h3>概念必须落到代码</h3>
+              <p>每章都配一个 PyTorch 脚本或可检查的小实验，避免只停留在名词解释。</p>
+            </article>
+            <article>
+              <span>02</span>
+              <h3>老知识只讲必要部分</h3>
+              <p>CNN、RNN、LSTM、GRU 作为建立直觉的台阶，重点最终回到 Transformer 与 LLM。</p>
+            </article>
+            <article>
+              <span>03</span>
+              <h3>训练目标保持连贯</h3>
+              <p>从分类交叉熵到 next-token loss，再到 response-only mask、preference loss 和 policy objective。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="featured" aria-labelledby="featured-title">
+        <div class="section-heading">
+          <p class="section-kicker">Featured</p>
+          <h2 id="featured-title">四个最值得先看的节点</h2>
+        </div>
+        <div class="featured-grid">
+          <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/11_self_attention_from_scratch.md">
+            <span>11</span>
+            <h3>Self-Attention 从零实现</h3>
+            <p>把 query、key、value、padding mask、causal mask 拆到可打印、可检查。</p>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/13_gpt_from_scratch.md">
+            <span>13</span>
+            <h3>GPT 从零实现</h3>
+            <p>token embedding、位置编码、Transformer block、LM head 组成最小 decoder-only 模型。</p>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/16_sft_instruction_tuning.md">
+            <span>16</span>
+            <h3>SFT 指令微调</h3>
+            <p>用 response-only label mask 解释为什么 SFT 本质上仍然是 next-token prediction。</p>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/20_capstone_mini_llm_pipeline.md">
+            <span>20</span>
+            <h3>Mini LLM Pipeline</h3>
+            <p>把预训练、生成检查、loss 显微镜、SFT、PPO、DPO、GRPO 串成可运行路线图。</p>
+          </a>
+        </div>
+      </section>
+
+      <section class="chapters" id="chapters" aria-labelledby="chapters-title">
+        <div class="section-heading">
+          <p class="section-kicker">Chapters</p>
+          <h2 id="chapters-title">20 章路线</h2>
+        </div>
+        <div class="chapter-layout">
+          <div class="phase-tabs" role="tablist" aria-label="按阶段筛选章节">
+            <button class="phase-tab is-active" type="button" data-phase="all">全部</button>
+            <button class="phase-tab" type="button" data-phase="foundation">最小地基</button>
+            <button class="phase-tab" type="button" data-phase="sequence">视觉与序列</button>
+            <button class="phase-tab" type="button" data-phase="transformer">Transformer</button>
+            <button class="phase-tab" type="button" data-phase="post-training">Post-training</button>
+          </div>
+          <div class="chapter-list" id="chapter-list"></div>
+        </div>
+      </section>
+
+      <section class="experiments" id="experiments" aria-labelledby="experiments-title">
+        <div class="experiment-copy">
+          <p class="section-kicker">Run It</p>
+          <h2 id="experiments-title">文章和代码是一一对应的</h2>
+          <p>
+            本专栏的第一目标是让读者把核心训练循环跑通。项目使用 `uv` 管理环境，
+            smoke test 会覆盖从手写梯度到 mini-GPT 生成的关键闭环。
+          </p>
+        </div>
+        <div class="terminal-window" aria-label="实验命令">
+          <div class="terminal-bar">
+            <span></span><span></span><span></span>
+          </div>
+          <pre><code>uv sync --locked
+bash scripts/smoke_test.sh
+
+uv run python -m llm_tutor.experiments.train_cnn --epochs 2
+uv run python -m llm_tutor.experiments.inspect_self_attention
+uv run python -m llm_tutor.experiments.train_mini_gpt --epochs 2
+uv run python -m llm_tutor.experiments.run_capstone_pipeline</code></pre>
+        </div>
+      </section>
+
+      <section class="code-map" aria-labelledby="code-map-title">
+        <div class="section-heading">
+          <p class="section-kicker">Code Map</p>
+          <h2 id="code-map-title">核心代码入口</h2>
+        </div>
+        <div class="code-map-grid">
+          <a href="https://github.com/fengjikui/llm-tutor/tree/main/src/llm_tutor/models">
+            <strong>models</strong>
+            <span>CNN、RNN、Seq2Seq、Attention、Transformer、GPT</span>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/tree/main/src/llm_tutor/experiments">
+            <strong>experiments</strong>
+            <span>每章对应的训练、检查和对比脚本</span>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/tree/main/src/llm_tutor/post_training">
+            <strong>post_training</strong>
+            <span>SFT、PPO、DPO、GRPO 的最小教学实现</span>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/blob/main/reports/capstone_report.md">
+            <strong>capstone report</strong>
+            <span>Mini LLM Pipeline 的阶段说明与结果记录</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="references" id="references" aria-labelledby="references-title">
+        <div>
+          <p class="section-kicker">Aesthetic References</p>
+          <h2 id="references-title">参考的知识分享站点气质</h2>
+        </div>
+        <ul>
+          <li><a href="https://lilianweng.github.io/">Lilian Weng</a><span>长文结构、术语密度和图文节奏</span></li>
+          <li><a href="https://jalammar.github.io/">Jay Alammar</a><span>视觉解释和模型结构拆解</span></li>
+          <li><a href="https://colah.github.io/">Colah's Blog</a><span>用图建立直觉，而不是堆公式</span></li>
+          <li><a href="https://maggieappleton.com/garden">Maggie Appleton</a><span>个人知识花园的温度和可探索性</span></li>
+          <li><a href="https://eugeneyan.com/">Eugene Yan</a><span>工程化目录、实践导向和索引清晰度</span></li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor">Source on GitHub</a>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
