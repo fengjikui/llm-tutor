@@ -1,0 +1,138 @@
+---
+title: "07. RNN：让模型读序列"
+status: "已完成"
+summary: "用字符级姓名分类理解时间步、hidden state、padding 和循环神经网络的基本训练方式。"
+---
+
+# 07. RNN：让模型读序列
+
+前面的表格和图像任务都有固定形状：
+
+```text
+表格: [batch, features]
+图像: [batch, channels, height, width]
+```
+
+序列数据多了一个“时间”维度。一个名字、一句话、一段音频，都可以看成按顺序到来的元素。
+
+这一章用字符级姓名分类做例子：
+
+```text
+"martin" -> m -> a -> r -> t -> i -> n -> French
+```
+
+模型每次读一个字符，并不断更新自己的 hidden state。
+
+这个数据集是内置的小型教学数据，只用于观察字符序列如何进入 RNN。真实世界里同一个姓名可能来自多个语言和文化背景，本章不把它当作判断个人国籍、民族或身份的工具。
+
+## RNN 的核心直觉
+
+普通神经网络每次只看一个完整输入。RNN 的特点是：它在第 `t` 个时间步会同时看当前输入和上一个 hidden state。
+
+```text
+h_t = RNNCell(x_t, h_{t-1})
+```
+
+你可以把 `h_t` 理解成模型读到当前位置为止形成的“摘要”。读完最后一个真实字符后，我们用最后的表示做分类。
+
+## 字符如何进入模型
+
+神经网络不能直接读字符，所以我们先把字符变成 id：
+
+```text
+a -> 1
+b -> 2
+c -> 3
+...
+padding -> 0
+```
+
+一个 batch 里的名字长度不同，需要 padding 到同一长度：
+
+```text
+smith  -> [19, 13, 9, 20, 8]
+lee    -> [12, 5, 5, 0, 0]
+```
+
+本章为了教学简单，没有使用 packed sequence。代码仍然会让 RNN 跑完整个 padded batch，但会根据 `pad_id=0` 找到每个名字最后一个真实字符，只用那个位置的 output 做分类。
+
+如果直接使用最终 `_hidden` 或 `output[:, -1]`，短名字后面的 padding 时间步就可能影响分类表示。这也是序列模型里 mask、length、packing 这些概念会反复出现的原因。
+
+## 本章模型
+
+代码在 `src/llm_tutor/models/rnn.py`：
+
+```text
+input_ids [batch, seq_len]
+-> Embedding
+-> RNN
+-> last real token output [batch, hidden_size]
+-> Linear
+-> logits [batch, num_languages]
+```
+
+这个结构已经包含后面 NLP 模型的几个重要影子：
+
+- token id；
+- embedding；
+- sequence length；
+- padding；
+- hidden representation；
+- logits 和 cross entropy。
+
+## 运行实验
+
+```bash
+uv run python -m llm_tutor.experiments.train_rnn_classifier --epochs 20
+```
+
+快速 smoke test：
+
+```bash
+uv run python -m llm_tutor.experiments.train_rnn_classifier --epochs 2
+```
+
+样例输出：
+
+```text
+epoch=01 train_loss=... val_loss=... val_acc=... val_f1=...
+...
+cell_type=rnn test_loss=... test_acc=... macro_f1=...
+```
+
+这里的 `macro_f1` 是多分类平均 F1。这个内置小数据集只用于教学，不用于证明模型真的能可靠判断姓名来源。
+
+## BPTT 是什么
+
+RNN 的反向传播会沿着时间步展开。模型在最后的分类 loss 会把梯度传回前面的字符位置。
+
+这叫 Backpropagation Through Time，简称 BPTT。
+
+它和普通反向传播没有本质区别，只是计算图沿着时间维度重复展开。问题也由此出现：序列很长时，梯度可能在很多时间步之后变得很小或很大，也就是后面要讲的梯度消失和梯度爆炸。
+
+代码里虽然只在最后做分类，但梯度会从最后的分类 loss 回到前面的时间步，更新共享的 RNN 参数和字符 embedding。
+
+## 这个实验能说明什么
+
+- 序列模型会按时间步处理输入。
+- hidden state 可以携带前面字符的信息。
+- padding 是 batch 化训练序列数据时必须处理的问题。
+- 同一个训练循环可以继续服务序列分类。
+
+## 这个实验不能证明什么
+
+- 它不能证明 RNN 适合所有 NLP 任务。
+- 它不能证明模型真的理解语言或姓氏文化。
+- 它不能用于推断现实中的个人国籍、民族或文化身份。
+- 它不能解决长文本里的长距离依赖问题。
+
+## 常见失败
+
+- 指标波动：数据很小，波动正常。
+- padding 后效果奇怪：检查模型是否取最后一个真实 token，而不是最后一个 pad token。
+- 训练更长也不明显提升：普通 RNN 表达能力有限，下一章会引入 LSTM 和 GRU。
+
+脚本已经支持 `--cell-type gru` 和 `--cell-type lstm`，但这一章先不要急着比较谁更高。下一章会专门解释门控结构为什么出现，以及它们和普通 RNN 的区别。
+
+上一章：[06. CNN 为什么适合图像](06_cnn_image_classification.md)  
+下一章：[08. LSTM 和 GRU：门控记忆](08_lstm_gru.md)
