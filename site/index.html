@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="从机器学习训练闭环到 Transformer、GPT、SFT、PPO、DPO、GRPO 的中文动手教程专栏。"
+      content="从机器学习训练闭环到 Transformer、GPT、SFT、PPO、DPO、GRPO、现代 LLM 组件、多模态和 Diffusion 的中文动手教程专栏。"
     />
     <title>从梯度下降到 GPT | Jikui Notes</title>
     <link rel="stylesheet" href="./styles.css" />
@@ -28,12 +28,12 @@
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <p class="series-label">机器学习 / 深度学习 / LLM 后训练</p>
+          <p class="series-label">机器学习 / 深度学习 / LLM 后训练 / 现代组件</p>
           <h1>从梯度下降到 GPT</h1>
           <p class="hero-intro">
-            给会写 Python、想快速建立大语言模型训练直觉的读者：用 20
+            给会写 Python、想快速建立大语言模型训练直觉的读者：用 23
             章中文教程和 PyTorch 实验，把损失函数、反向传播、CNN、RNN、Attention、
-            Transformer、GPT、SFT、PPO、DPO、GRPO 串成一条能跑起来的学习路径。
+            Transformer、GPT、SFT、PPO、DPO、GRPO、现代 LLM 组件、多模态和 Diffusion 串成一条能跑起来的学习路径。
           </p>
           <div class="hero-actions" aria-label="主要入口">
             <a class="primary-link" href="#chapters">进入章节列表</a>
@@ -63,6 +63,11 @@
               <span>16-20</span>
               <strong>Post-training</strong>
               <small>SFT / PPO / DPO / GRPO / Mini LLM Pipeline</small>
+            </li>
+            <li>
+              <span>21-23</span>
+              <strong>现代扩展</strong>
+              <small>RoPE / GQA / MLA / VLM / VLA / Diffusion</small>
             </li>
           </ol>
         </aside>
@@ -119,7 +124,7 @@
       <section class="chapters" id="chapters" aria-labelledby="chapters-title">
         <div class="section-heading">
           <p class="section-kicker">章节目录</p>
-          <h2 id="chapters-title">20 章路线</h2>
+          <h2 id="chapters-title">23 章路线</h2>
         </div>
         <div class="chapter-layout">
           <div class="phase-tabs" aria-label="按阶段筛选章节">
@@ -128,6 +133,7 @@
             <button class="phase-tab" type="button" data-phase="sequence">视觉与序列</button>
             <button class="phase-tab" type="button" data-phase="transformer">Transformer</button>
             <button class="phase-tab" type="button" data-phase="post-training">Post-training</button>
+            <button class="phase-tab" type="button" data-phase="modern">现代扩展</button>
           </div>
           <div class="chapter-list" id="chapter-list"></div>
         </div>
@@ -158,6 +164,11 @@
             <span>20</span>
             <h3>Mini LLM Pipeline</h3>
             <p>把预训练、生成检查、loss 显微镜、SFT、PPO、DPO、GRPO 串成可运行路线图。</p>
+          </a>
+          <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/21_modern_llm_components.md">
+            <span>21</span>
+            <h3>现代 LLM 组件</h3>
+            <p>用简化实现理解 RoPE、GQA、MLA、稀疏注意力、FlashAttention 和 KV Cache。</p>
           </a>
         </div>
       </section>

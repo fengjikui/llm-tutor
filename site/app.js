@@ -159,6 +159,30 @@ const chapters = [
     tags: ["capstone", "pipeline", "LLM"],
     file: "20_capstone_mini_llm_pipeline.md",
   },
+  {
+    no: "21",
+    title: "现代 LLM 组件",
+    summary: "用简化实现理解 RoPE、GQA、MLA、稀疏注意力、FlashAttention 和 KV Cache。",
+    phase: "modern",
+    tags: ["RoPE", "GQA", "MLA"],
+    file: "21_modern_llm_components.md",
+  },
+  {
+    no: "22",
+    title: "多模态小系列",
+    summary: "从 ViT、CLIP、ClipCap 到 Qwen3-VL、Qwen3.5-Omni、Qwen-VLA 和 encoder-free multimodal。",
+    phase: "modern",
+    tags: ["ClipCap", "Qwen3-VL", "VLA"],
+    file: "22_multimodal_vit_clip_vlm.md",
+  },
+  {
+    no: "23",
+    title: "Diffusion 生图",
+    summary: "从加噪去噪、latent diffusion、CFG 到 Stable Diffusion 和 DiT。",
+    phase: "modern",
+    tags: ["DDPM", "Stable Diffusion", "DiT"],
+    file: "23_diffusion_image_generation.md",
+  },
 ];
 
 const repoBase = "https://github.com/fengjikui/llm-tutor/blob/main/tutorials";

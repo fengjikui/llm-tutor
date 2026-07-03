@@ -24,9 +24,14 @@
 | 已完成 | [18. DPO：直接偏好优化](18_dpo_preference_optimization.md) |
 | 已完成 | [19. GRPO：面向可验证任务的组内相对优化](19_grpo_verifiable_tasks.md) |
 | 已完成 | [20. Capstone：Mini LLM Pipeline](20_capstone_mini_llm_pipeline.md) |
+| 已完成 | [21. 现代 LLM 组件：RoPE、GQA、MLA、稀疏注意力与 KV Cache](21_modern_llm_components.md) |
+| 已完成 | [22. 多模态小系列：从 ViT、CLIP、ClipCap 到现代 VLM/VLA](22_multimodal_vit_clip_vlm.md) |
+| 已完成 | [23. Diffusion 生图：从加噪去噪到 Stable Diffusion 和 DiT](23_diffusion_image_generation.md) |
 
 到第 20 章为止，训练闭环已经从表格分类、图像分类、序列分类、翻译任务一路扩展到自回归语言模型，并进入了 SFT、PPO、DPO、GRPO 和 Capstone：
 
 ```text
 准备数据 -> 前向传播 -> 计算损失 -> 反向传播 -> 更新参数 -> 评估指标
 ```
+
+第 21-23 章是主线之后的现代组件补充：它们不强行设计训练实验，而是帮助读者读懂真实厂商模型代码、现代多模态架构和生图模型。

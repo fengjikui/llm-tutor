@@ -7,8 +7,9 @@
 - CNN、RNN、Seq2Seq、Attention、Transformer 如何一步步演进；
 - GPT 的结构、训练数据、目标数据和损失函数如何设计；
 - SFT、PPO、DPO、GRPO 分别解决什么问题，以及如何写出最小可运行实验。
+- 现代 LLM 组件、多模态模型和 Diffusion 生图系统如何从 Transformer 主线自然延伸出来。
 
-课程会采用“概念解释 + 代码实现 + 实验观察 + 常见坑”的形式。前半部分服务于建立地基，后半部分重点放在 Transformer、GPT 和 LLM post-training。
+课程会采用“概念解释 + 代码实现 + 实验观察 + 常见坑”的形式。前半部分服务于建立地基，后半部分重点放在 Transformer、GPT、LLM post-training，以及现代模型组件。
 
 完整大纲见 [COURSE_OUTLINE.md](COURSE_OUTLINE.md)。实验真实性和后续升级路线见
 [docs/EXPERIMENT_REALISM_REDESIGN.md](docs/EXPERIMENT_REALISM_REDESIGN.md)。

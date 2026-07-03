@@ -12,13 +12,14 @@
 -> Transformer
 -> GPT 预训练
 -> SFT / PPO / DPO / GRPO
+-> 现代 LLM 组件 / 多模态 / Diffusion
 ```
 
-前半段帮助读者建立损失函数、前向传播、反向传播、梯度下降、优化器、泛化和模型表达能力的概念。后半段重点讲 Transformer 和大语言模型，最终实现一个从零开始的小型 GPT，并继续实现 SFT、PPO、DPO、GRPO 的最小实验脚本。
+前半段帮助读者建立损失函数、前向传播、反向传播、梯度下降、优化器、泛化和模型表达能力的概念。后半段重点讲 Transformer 和大语言模型，最终实现一个从零开始的小型 GPT，并继续实现 SFT、PPO、DPO、GRPO 的最小实验脚本。第 21-23 章作为现代组件补充，帮助读者读懂真实厂商模型、多模态模型和 Diffusion 生图系统。
 
 ## 当前实现说明
 
-当前课程已经落地为 20 篇 Markdown 教程和一组 PyTorch 脚本：
+当前课程已经落地为 23 篇 Markdown 教程和一组 PyTorch 脚本：
 
 - 教程入口：[tutorials/README.md](tutorials/README.md)
 - 实验入口：`src/llm_tutor/experiments/`
@@ -65,6 +66,9 @@
 | 已完成 | 18. DPO：直接偏好优化 |
 | 已完成 | 19. GRPO：面向可验证任务的组内相对优化 |
 | 已完成 | 20. Capstone：Mini LLM Pipeline |
+| 已完成 | 21. 现代 LLM 组件：RoPE、GQA、MLA、稀疏注意力与 KV Cache |
+| 已完成 | 22. 多模态小系列：从 ViT、CLIP、ClipCap 到现代 VLM/VLA |
+| 已完成 | 23. Diffusion 生图：从加噪去噪到 Stable Diffusion 和 DiT |
 
 ## 第一部分：机器学习最小地基
 
@@ -507,6 +511,72 @@
 - `notebooks/20_capstone_mini_llm_pipeline.ipynb`
 - `src/llm_tutor/capstone/`
 - `reports/capstone_report.md`
+
+## 第九部分：现代模型组件、多模态与生图
+
+### 21. 现代 LLM 组件：RoPE、GQA、MLA、稀疏注意力与 KV Cache
+
+核心内容：
+
+- RoPE：现代 decoder-only LLM 常见的位置编码方式。
+- GQA/MQA：减少 KV heads，降低推理阶段 KV cache 压力。
+- MLA：DeepSeek-V2/V3 使用的 latent KV 压缩思路。
+- 稀疏注意力、滑动窗口注意力、FlashAttention、FlashMLA。
+- KV Cache、prefill、decode、paged cache、quantized cache 的基本直觉。
+
+章节定位：
+
+- 不设计大训练实验。
+- 提供简化 PyTorch 实现，用来读懂 shape 和 cache 流动。
+- 帮读者从教育版 GPT 过渡到真实厂商模型代码。
+
+计划产出：
+
+- `tutorials/21_modern_llm_components.md`
+- `src/llm_tutor/models/modern_attention.py`
+- `tests/test_modern_attention.py`
+
+### 22. 多模态小系列：从 ViT、CLIP、ClipCap 到现代 VLM/VLA
+
+核心内容：
+
+- ViT：图片如何切成 patch token。
+- CLIP：图文对比学习和 zero-shot 分类。
+- ClipCap：把 CLIP 图像表示映射成语言模型 prefix，用 GPT-2 这类 decoder 生成 caption。
+- CoCa：作为 CLIP 对齐和 captioning 结合的旁支代表。
+- BLIP/BLIP-2：用 Q-Former 桥接冻结视觉 encoder 和 LLM。
+- LLaVA：visual projector + visual instruction tuning。
+- Qwen3-VL/Qwen3.5-Omni：动态分辨率、MRoPE、DeepStack、长上下文、音视频和全模态交互。
+- Qwen-VLA：从 VLM 扩展到 vision-language-action，输出连续动作和轨迹。
+- Gemma 4 12B：Google encoder-free multimodal 路线，没有单独多模态 encoder。
+
+章节定位：
+
+- 不先训练 VLM，而是建立架构地图。
+- 重点讲“图片怎么变成 LLM 能读的 token”。
+
+计划产出：
+
+- `tutorials/22_multimodal_vit_clip_vlm.md`
+
+### 23. Diffusion 生图：从加噪去噪到 Stable Diffusion 和 DiT
+
+核心内容：
+
+- DDPM：forward noising 和 reverse denoising。
+- 噪声预测 loss 与 GPT next-token loss 的差异。
+- Latent Diffusion：为什么 Stable Diffusion 在 latent 空间去噪。
+- Text encoder、U-Net/Transformer denoiser、scheduler、classifier-free guidance。
+- DiT：用 Transformer 替代 U-Net 主干。
+
+章节定位：
+
+- 不训练大生图模型。
+- 让读者知道现代生图系统由哪些模块组成，以及它和 Transformer 主线如何接上。
+
+计划产出：
+
+- `tutorials/23_diffusion_image_generation.md`
 
 ## 推荐实现顺序
 
