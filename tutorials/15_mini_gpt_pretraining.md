@@ -6,6 +6,13 @@ summary: "在 mini-GPT 上加入 checkpoint、validation loss、梯度裁剪和 
 
 # 15. 小型 GPT 预训练工程化
 
+## 本章学习契约
+
+- 新增概念：validation loss、checkpoint、梯度裁剪、temperature/top-k/top-p 采样。
+- 实验要验证：mini-GPT 的训练结果可以保存、加载、生成，并通过采样参数观察输出变化。
+- 实验不验证：它不是大模型预训练工程，也不覆盖分布式训练、混合精度或数据管线。
+- 跑完重点看：train/val loss、checkpoint 路径、重新加载后能否生成，以及固定 prompt 下采样参数改变带来的差异。
+
 第 13、14 章已经讲清楚了 GPT 的结构和 loss。第 15 章开始补一点训练工程。
 
 这里的“工程化”不是大规模分布式训练，而是先把最小实验变得可复现、可保存、可加载、可比较：
@@ -70,6 +77,16 @@ temperature 控制采样分布的尖锐程度：
 - `temperature = 1`：使用原始 logits；
 - `temperature > 1`：更随机，更容易发散。
 
+用三个候选 token 做个直觉例子：
+
+```text
+原始概率:  A=0.70, B=0.20, C=0.10
+低温采样:  A 更接近 1，输出更保守
+高温采样:  B/C 的机会变大，输出更多样也更容易乱
+```
+
+temperature 不会创造新知识，它只改变“从当前模型认为可能的 token 里怎么抽样”。
+
 ## Top-k
 
 top-k 每一步通常只保留概率最高的 `k` 个 token，再从这些 token 里采样。本项目教学实现按阈值过滤，如果第 `k` 名附近出现完全相同的 logits，并列 token 可能会被一起保留。
@@ -110,6 +127,8 @@ uv run python -m llm_tutor.experiments.train_mini_gpt \
 ```
 
 这个输出不会像自然语言，但它能验证训练、保存、加载和生成这条路径。
+
+默认脚本会优先使用 CUDA；没有 GPU 时会自动落到 CPU。当前课程的默认 smoke 参数按 CPU 可跑设计，4090 这类显卡只有在你想扩大语料、模型尺寸、训练轮数或做更真实的后训练实验时才有必要。
 
 ## 下一步
 

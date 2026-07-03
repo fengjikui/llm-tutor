@@ -6,6 +6,13 @@ summary: "用一个 tiny bandit 实验解释 PPO 的 policy、old policy、advan
 
 # 17. PPO：经典 RLHF 的核心优化器
 
+## 本章学习契约
+
+- 新增概念：policy、reward、old policy、ratio、clipping、KL penalty。
+- 实验要验证：PPO 如何用 reward 鼓励更好的 action，同时用 clipping/KL 限制 policy 一步改得太猛。
+- 实验不验证：它不是完整 RLHF 系统，也没有训练语言模型生成长文本。
+- 跑完重点看：平均 reward 是否上升，policy 是否偏向高 reward action，KL/ratio 是否提醒更新幅度。
+
 PPO 是 RLHF 里最经典的一类优化器。真实 RLHF 会让语言模型生成回答，再用 reward model 打分，并用 PPO 更新 policy。
 
 这一章先不直接训练 mini-GPT 生成长文本，而是用一个 tiny bandit 实验把 PPO 公式讲清楚：
@@ -17,6 +24,19 @@ prompt -> policy 选择 action -> rule reward 打分 -> PPO 更新 policy
 这样可以先看懂核心优化目标，再把它迁移到语言模型。
 
 这个实验刻意省略了完整 RLHF 里的很多组件：没有 token-level generation、没有 reward model、没有 value model/GAE、没有 rollout buffer，也没有多轮 prompt-response。它只负责讲清楚 PPO 更新本身。
+
+教学 bandit 和真实 LLM 的对应关系大致是：
+
+| Bandit 实验 | LLM/RLHF 里对应什么 |
+|---|---|
+| prompt | 用户问题或上下文 |
+| action | 一段 response，内部由多个 token 组成 |
+| policy | 正在训练的语言模型 |
+| old policy | 采样这批回答时的模型快照 |
+| reward rule | reward model 或可验证规则 |
+| log_prob(action) | response token log probability 的和或均值 |
+
+所以本章的 `yes/no/ok` 只是把“生成一段回答”压缩成了一个离散选择，方便先看清 ratio、clipping 和 KL。
 
 ## Policy、Action 和 Reward
 
@@ -75,6 +95,14 @@ advantage = reward
 
 这样读者可以先看懂 clipping，后面再补 value/GAE 等更完整的 RL 细节。
 
+更完整的直觉是：
+
+```text
+advantage = reward - baseline
+```
+
+如果某个回答得分是 0.8，但模型本来预计这个 prompt 平均能拿 0.7，那么 advantage 只有 0.1；如果本来预计只能拿 0.2，那么 advantage 是 0.6。value model/GAE 的作用就是更稳定地估计这个 baseline。本章跳过它，是为了不让第一个 PPO 实验同时背太多 RL 概念。
+
 ## Clipped Objective
 
 PPO 的核心是限制策略更新不要太猛：
@@ -105,6 +133,8 @@ loss = ppo_policy_loss + beta * KL(policy || reference)
 本章实验里 reference 是一个固定的均匀策略。
 
 真实语言模型训练通常按生成 token 估计 KL penalty。本章为了教学，直接计算 categorical policy 的完整 `KL(policy || reference)`。
+
+这也是一个重要边界：bandit 的 action 空间只有 3 个，所以可以枚举完整分布；LLM 的回答空间巨大，通常只能在实际生成的 token 上近似计算 policy 和 reference 的 logprob 差。
 
 entropy 则鼓励策略保持一定探索性：
 

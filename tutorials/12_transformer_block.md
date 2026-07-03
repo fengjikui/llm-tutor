@@ -6,6 +6,13 @@ summary: "实现一个 Pre-LN Transformer block，理解 residual、LayerNorm、
 
 # 12. Transformer Block：把 Self-Attention 组装起来
 
+## 本章学习契约
+
+- 新增概念：residual connection、LayerNorm、MLP/feed-forward、Pre-LN Transformer block。
+- 实验要验证：self-attention 可以和残差、归一化、MLP 组合成 GPT 的基本积木，并保持输入输出 shape 一致。
+- 实验不验证：它还不是完整 GPT，也没有开始大规模预训练。
+- 跑完重点看：block 输入输出 shape、attention 权重 shape、`future_weight_sum=0.0000` 是否说明 causal mask 生效。
+
 上一章我们只实现了 self-attention。完整 Transformer block 还需要几个关键组件：
 
 - residual connection；
@@ -74,6 +81,17 @@ Linear(4 * embed_dim -> embed_dim)
 ```
 
 注意：MLP 不混合不同 token，它是逐 token 工作的。token 间交互主要发生在 self-attention 里。
+
+可以把一个 block 粗略分工成：
+
+```text
+self-attention: 我应该从其他 token 取回什么信息？
+MLP: 拿到上下文后的这个 token 表示，应该如何进一步加工？
+```
+
+如果只有 attention，没有 MLP，模型仍然能路由信息，但每个 token 位置上的非线性变换能力会弱很多。真实 Transformer 里，MLP 往往占用大量参数，是表达能力的重要来源。
+
+本章的 block 是 GPT 风格的 masked self-attention block。它不是原始 Transformer decoder 的完整结构，因为原始 decoder 还会有一层 encoder-decoder cross-attention；GPT 不需要那一层。
 
 ## 运行实验
 

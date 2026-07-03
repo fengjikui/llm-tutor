@@ -6,6 +6,13 @@ summary: "建立后续所有实验都会复用的 PyTorch 训练循环和 shape 
 
 # 03. PyTorch 快速生存指南
 
+## 本章学习契约
+
+- 新增概念：Tensor shape、Dataset/DataLoader、`nn.Module`、标准训练循环。
+- 实验要验证：后续 CNN、RNN、Transformer、GPT 都可以复用同一个 `forward -> loss -> backward -> step` 骨架。
+- 实验不验证：它不要求 GPU，也不试图一次讲完 PyTorch 的所有 API。
+- 跑完重点看：数据 batch 的 shape、训练 loss、验证指标，以及代码里清零梯度和更新参数的位置。
+
 PyTorch 训练脚本的核心结构非常稳定。后面的 CNN、RNN、Transformer、GPT 都会反复出现这几个动作。
 
 ## Tensor
@@ -85,6 +92,18 @@ optimizer.step()
 - `optimizer.zero_grad()`：清掉上一轮残留的梯度。
 - `loss.backward()`：反向传播，计算新梯度。
 - `optimizer.step()`：更新参数。
+
+可以把边界记成一句话：
+
+```text
+model(x) 到 loss 是前向传播；
+loss.backward() 是反向传播；
+optimizer.step() 是拿已经算好的梯度改参数。
+```
+
+`optimizer.step()` 本身不再计算梯度，它只读取参数里的 `.grad`。这也是 `zero_grad()` 必须放在下一次 `backward()` 之前的原因。
+
+如果故意不调用 `zero_grad()`，PyTorch 会把多个 batch 的梯度累积起来。这在少数场景里是有意为之，叫 gradient accumulation；但初学阶段如果无意累积，常见现象是 loss 波动异常、学习率看起来莫名变大。
 
 ## 训练模式和评估模式
 

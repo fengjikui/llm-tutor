@@ -6,6 +6,13 @@ summary: "用一个显微镜实验拆开 next-token prediction：x/y 错位、lo
 
 # 14. GPT 的训练数据、目标数据和损失函数
 
+## 本章学习契约
+
+- 新增概念：next-token target、逐 token cross entropy、label shift、causal mask 检查。
+- 实验要验证：GPT 的监督信号来自文本自身，`x` 和 `y` 只差一位，loss 是很多个 token 分类 loss 的平均。
+- 实验不验证：它不增加新结构，也不比较不同 tokenizer 或大型语料。
+- 跑完重点看：`x -> y` 的错位打印、logits/labels shape、逐 token loss 和 `MiniGPT.forward` 返回 loss 是否一致。
+
 上一章已经把 mini-GPT 跑起来了。这一章不增加新结构，只盯住 GPT 预训练里最容易混淆的三件事：
 
 - 输入数据 `x` 是什么；
@@ -72,6 +79,14 @@ targets: [batch, seq_len]             -> [batch * seq_len]
 ```
 
 然后调用 `cross_entropy`。默认情况下，PyTorch 会对所有 token 位置的 loss 取平均。
+
+后面 SFT 会出现 label mask。假设一条 prompt+response 总共 8 个 target，其中 prompt 部分 5 个位置被设成 `-100`：
+
+```text
+labels = [-100, -100, -100, -100, -100, 12, 9, 4]
+```
+
+`cross_entropy(ignore_index=-100)` 只会平均最后 3 个 response token 的 loss。分母不是 8，而是参与训练的 3 个位置。
 
 ## 为什么还要检查 Causal Mask
 

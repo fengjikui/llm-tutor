@@ -34,6 +34,12 @@ bash scripts/smoke_test.sh
 
 第一次运行 CNN 相关实验时，Fashion-MNIST 会下载到 `data/vision`；之后会复用本地缓存。
 
+## 硬件说明
+
+默认实验按本地 CPU 可跑设计。脚本会在可用时优先使用 CUDA；没有 NVIDIA GPU 时会自动使用 CPU。当前版本没有强依赖 4090 这类显卡。
+
+如果只是学习教程主线、跑 smoke test、训练 mini-GPT 的 tiny 配置，普通笔记本即可。显卡更适合后续扩展实验：更大图像数据集、更长 mini-GPT 训练、更大的 instruction 数据、更真实的 PPO/DPO/GRPO 或 Hugging Face/TRL 实验。
+
 单独运行实验：
 
 ```bash

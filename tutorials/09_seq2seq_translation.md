@@ -6,6 +6,13 @@ summary: "用一个不带 attention 的 Encoder-Decoder 翻译 toy 实验理解 
 
 # 09. Seq2Seq：从分类到生成
 
+## 本章学习契约
+
+- 新增概念：encoder-decoder、BOS/EOS、teacher forcing、自回归解码、序列级 cross entropy。
+- 实验要验证：模型不再只输出一个类别，而是可以一步步生成一个目标序列。
+- 实验不验证：它不是正式机器翻译评测，也不能代表真实语料上的翻译能力。
+- 跑完重点看：source/target/prediction 三者是否对齐，EOS 是否正常结束，loss 是否按目标 token 计算。
+
 前几章的序列模型做的是分类：
 
 ```text
@@ -54,6 +61,17 @@ target_output: tu es intelligent <eos>
 
 训练时，decoder 看到 `target_input`，每个位置都要预测 `target_output` 的对应 token。
 
+把它展开成表格：
+
+| decoder 当前看到 | 需要预测 |
+|---|---|
+| `<bos>` | `tu` |
+| `tu` | `es` |
+| `es` | `intelligent` |
+| `intelligent` | `<eos>` |
+
+这就是生成任务里的错位监督。第 13、14 章 GPT 也会做类似事情，只是 GPT 没有单独的 encoder，输入文本自己同时提供上下文和下一个 token 标签。
+
 这和 GPT 的 next-token prediction 已经很接近了。区别是：Seq2Seq decoder 还会接收 encoder 给出的源句信息。
 
 ## Teacher Forcing
@@ -86,6 +104,8 @@ epoch=001 train_loss=... val_loss=...
 translations
 src='you are smart' target='tu es intelligent' pred='...'
 ```
+
+跑完时不要只看 `pred` 是否完全等于 `target`。还要看两件事：它有没有生成 `<eos>` 后停止，常见词是否出现在合理位置。toy 数据很小，完全正确和完全错乱之间会有很多中间状态。
 
 ## 怎么看结果
 
