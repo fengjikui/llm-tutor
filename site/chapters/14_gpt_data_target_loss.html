@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用一个显微镜实验拆开 next-token prediction：x/y 错位、logits shape、逐 token cross entropy 和 causal mask。" />
+    <title>14. GPT 的训练数据、目标数据和损失函数 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/14_gpt_data_target_loss.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Transformer / Chapter 14
+          </p>
+          <h1>14. GPT 的训练数据、目标数据和损失函数</h1>
+          <p class="article-summary">用一个显微镜实验拆开 next-token prediction：x/y 错位、logits shape、逐 token cross entropy 和 causal mask。</p>
+          <div class="article-tags"><span>next-token</span><span>loss</span><span>causal</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#训练标签来自文本本身">训练标签来自文本本身</a>
+<a class="toc-level-2" href="#logits-和-target-的-shape">logits 和 target 的 shape</a>
+<a class="toc-level-2" href="#cross-entropy-是逐位置分类">Cross Entropy 是逐位置分类</a>
+<a class="toc-level-2" href="#为什么还要检查-causal-mask">为什么还要检查 Causal Mask</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#和-sft-的关系">和 SFT 的关系</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：next-token target、逐 token cross entropy、label shift、causal mask 检查。</li><li>实验要验证：GPT 的监督信号来自文本自身，<code>x</code> 和 <code>y</code> 只差一位，loss 是很多个 token 分类 loss 的平均。</li><li>实验不验证：它不增加新结构，也不比较不同 tokenizer 或大型语料。</li><li>跑完重点看：<code>x -&gt; y</code> 的错位打印、logits/labels shape、逐 token loss 和 <code>MiniGPT.forward</code> 返回 loss 是否一致。</li></ul>
+<p>上一章已经把 mini-GPT 跑起来了。这一章不增加新结构，只盯住 GPT 预训练里最容易混淆的三件事：</p>
+<ul><li>输入数据 <code>x</code> 是什么；</li><li>目标数据 <code>y</code> 是什么；</li><li>loss 到底在哪些位置上计算。</li></ul>
+<h2 id="训练标签来自文本本身">训练标签来自文本本身</h2>
+<p>分类任务通常需要人工标签，例如“这张图是鞋子”。GPT 预训练不需要这种标签，它直接从文本中构造监督信号。</p>
+<p>给定字符 token：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">the model</code></pre></figure>
+<p>如果 block size 是 8，那么一个训练样本可以是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x = "the mode"
+y = "he model"</code></pre></figure>
+<p><code>y</code> 就是把 <code>x</code> 向右平移一位。模型在每个位置预测下一个 token。</p>
+<h2 id="logits-和-target-的-shape">logits 和 target 的 shape</h2>
+<p>mini-GPT 的输入是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">input_ids: [batch, seq_len]</code></pre></figure>
+<p>输出是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">logits: [batch, seq_len, vocab_size]</code></pre></figure>
+<p>目标是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">target_ids: [batch, seq_len]</code></pre></figure>
+<p>注意：<code>logits[b, t]</code> 是第 <code>b</code> 个样本、第 <code>t</code> 个位置对整个词表的打分；<code>target_ids[b, t]</code> 是这个位置真正应该预测的下一个 token。</p>
+<h2 id="cross-entropy-是逐位置分类">Cross Entropy 是逐位置分类</h2>
+<p>GPT 的 next-token prediction 可以理解成很多个小分类任务：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">位置 0：根据 t 预测 h
+位置 1：根据 t h 预测 e
+位置 2：根据 t h e 预测 空格
+...</code></pre></figure>
+<p>代码里通常会先展平：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">logits:  [batch, seq_len, vocab_size] -&gt; [batch * seq_len, vocab_size]
+targets: [batch, seq_len]             -&gt; [batch * seq_len]</code></pre></figure>
+<p>然后调用 <code>cross_entropy</code>。默认情况下，PyTorch 会对所有 token 位置的 loss 取平均。</p>
+<p>后面 SFT 会出现 label mask。假设一条 prompt+response 总共 8 个 target，其中 prompt 部分 5 个位置被设成 <code>-100</code>：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">labels = [-100, -100, -100, -100, -100, 12, 9, 4]</code></pre></figure>
+<p><code>cross_entropy(ignore_index=-100)</code> 只会平均最后 3 个 response token 的 loss。分母不是 8，而是参与训练的 3 个位置。</p>
+<h2 id="为什么还要检查-causal-mask">为什么还要检查 Causal Mask</h2>
+<p>训练时虽然所有 <code>x/y</code> 都已经在 batch 里，但模型不能在位置 <code>t</code> 看到位置 <code>t+1</code> 的输入。否则它就能偷看答案。</p>
+<p>所以第 13 章的 <code>MiniGPT.forward</code> 会在内部创建 causal mask。第 14 章的实验会打印：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">future_weight_sum=0.0000</code></pre></figure>
+<p>它表示 attention 权重没有落到未来位置上。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.inspect_gpt_loss</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">text='the model learns'
+vocab_size=12 block_size=8
+x_ids=[...]
+y_ids=[...]
+x_text='the mode'
+y_text='he model'
+logits_shape=(1, 8, 12)
+target_shape=(1, 8)
+per_token_loss_shape=(1, 8)
+per_token_loss=[...]
+model_loss=...
+manual_mean_loss=...
+loss_match=True
+future_weight_sum=0.0000</code></pre></figure>
+<p>这个实验可以帮你确认四件事：</p>
+<ul><li><code>x/y</code> 的错位是按 token 做的；</li><li>logits 的最后一维是词表大小；</li><li><code>MiniGPT.forward</code> 返回的 loss 等于逐 token loss 的平均值；</li><li>causal mask 阻止模型看未来 token。</li></ul>
+<h2 id="和-sft-的关系">和 SFT 的关系</h2>
+<p>后面的 SFT 仍然会用 next-token loss。不同点在于，SFT 的文本通常是 prompt + response，并且经常会 mask 掉 prompt 部分的 label，只让 response 部分贡献 loss。</p>
+<p>在 PyTorch 里，常见做法是把不参与 loss 的 label 位置设成 <code>ignore_index</code>，很多语言模型训练代码会使用 <code>-100</code>。这样 <code>cross_entropy</code> 会跳过这些位置，只平均剩下的 response token loss。</p>
+<p>所以先理解这一章非常重要：SFT 不是换了一种神秘损失函数，而是在同一个语言模型 loss 上改变了数据格式和 label mask。</p>
+<h2 id="下一步">下一步</h2>
+<p>下一章会把第 13、14 章合起来，开始补 mini-GPT 预训练工程化：checkpoint、validation loss、梯度裁剪和采样参数。</p>
+<p>上一章：<a href="./13_gpt_from_scratch.html">13. GPT 从零实现：decoder-only 语言模型</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./13_gpt_from_scratch.html"><span>上一篇</span><strong>GPT 从零实现：decoder-only 语言模型</strong></a>
+        <a href="./15_mini_gpt_pretraining.html"><span>下一篇</span><strong>小型 GPT 预训练工程化</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/14_gpt_data_target_loss.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用最少数学理解扩散模型：前向加噪、反向去噪、噪声预测、latent diffusion、classifier-free guidance、Stable Diffusion 与 Diffusion Transformer。" />
+    <title>23. Diffusion 生图：从加噪去噪到 Stable Diffusion 和 DiT | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/23_diffusion_image_generation.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            现代扩展 / Chapter 23
+          </p>
+          <h1>23. Diffusion 生图：从加噪去噪到 Stable Diffusion 和 DiT</h1>
+          <p class="article-summary">用最少数学理解扩散模型：前向加噪、反向去噪、噪声预测、latent diffusion、classifier-free guidance、Stable Diffusion 与 Diffusion Transformer。</p>
+          <div class="article-tags"><span>DDPM</span><span>Stable Diffusion</span><span>DiT</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#ddpm-训练模型预测噪声">DDPM：训练模型预测噪声</a>
+<a class="toc-level-2" href="#sampling-从噪声走回图像">Sampling：从噪声走回图像</a>
+<a class="toc-level-2" href="#latent-diffusion-不在像素空间里去噪">Latent Diffusion：不在像素空间里去噪</a>
+<a class="toc-level-2" href="#prompt-如何影响图像-cross-attention">Prompt 如何影响图像：Cross-Attention</a>
+<a class="toc-level-2" href="#classifier-free-guidance-让-prompt-更有力">Classifier-Free Guidance：让 prompt 更有力</a>
+<a class="toc-level-2" href="#dit-把-u-net-换成-transformer">DiT：把 U-Net 换成 Transformer</a>
+<a class="toc-level-2" href="#看生图模型代码时的五个问题">看生图模型代码时的五个问题</a>
+<a class="toc-level-2" href="#和-llm-的关系">和 LLM 的关系</a>
+<a class="toc-level-2" href="#参考">参考</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：DDPM、forward noising、reverse denoising、noise prediction、latent diffusion、text conditioning、classifier-free guidance、DiT。</li><li>本章要解决：读者知道生图模型为什么不是 GPT 式从左到右生成，而是从噪声一步步去噪。</li><li>本章不验证：不训练生图模型，不跑 GPU 采样实验。</li><li>看完重点：Stable Diffusion 这类系统由 VAE、text encoder、denoiser、scheduler 组成，不只是一个大 U-Net。</li></ul>
+<p>语言模型生成文本时是自回归的：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">token_1 -&gt; token_2 -&gt; token_3 -&gt; ...</code></pre></figure>
+<p>Diffusion 生图模型的直觉完全不同：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">纯噪声图
+-&gt; 去掉一点噪声
+-&gt; 再去掉一点噪声
+-&gt; ...
+-&gt; 清晰图像</code></pre></figure>
+<h2 id="ddpm-训练模型预测噪声">DDPM：训练模型预测噪声</h2>
+<p>DDPM 有两个过程：</p>
+<div class="table-wrap"><table><thead><tr><th>过程</th><th>是否学习</th><th>做什么</th></tr></thead><tbody><tr><td>forward process</td><td>不学习</td><td>给真实图像逐步加噪</td></tr>
+<tr><td>reverse process</td><td>学习</td><td>从噪声里一步步还原图像</td></tr></tbody></table></div>
+<p>训练时，我们随机选一个时间步 <code>t</code>，把干净图像 <code>x0</code> 加噪得到 <code>xt</code>，然后让模型预测加进去的噪声 <code>epsilon</code>。</p>
+<p>最小形状示意：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">import torch
+from torch.nn import functional as F
+
+def add_noise(x0, noise, alpha_bar_t):
+    return alpha_bar_t.sqrt() * x0 + (1 - alpha_bar_t).sqrt() * noise
+
+x0 = torch.randn(8, 3, 64, 64)
+noise = torch.randn_like(x0)
+xt = add_noise(x0, noise, alpha_bar_t=torch.tensor(0.3))
+pred_noise = denoiser(xt, timestep=t)
+loss = F.mse_loss(pred_noise, noise)</code></pre></figure>
+<p>这和 GPT 的 next-token loss 很不一样：</p>
+<ul><li>GPT 预测下一个离散 token。</li><li>Diffusion 通常预测连续噪声、干净样本或 velocity。</li></ul>
+<h2 id="sampling-从噪声走回图像">Sampling：从噪声走回图像</h2>
+<p>采样时先从纯噪声开始：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x_T ~ Normal(0, I)</code></pre></figure>
+<p>然后按 scheduler 的规则从 <code>T</code> 走到 <code>0</code>：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">x = torch.randn(batch, channels, height, width)
+for t in reversed(timesteps):
+    pred_noise = denoiser(x, t, condition)
+    x = scheduler_step(x, pred_noise, t)</code></pre></figure>
+<p>不同 scheduler 的区别在于：每一步怎么根据模型预测更新 <code>x</code>。这就是为什么同一个模型可以搭配 DDIM、Euler、DPM-Solver 等不同采样器。</p>
+<h2 id="latent-diffusion-不在像素空间里去噪">Latent Diffusion：不在像素空间里去噪</h2>
+<p>高分辨率图片的像素空间很大。Latent Diffusion 的关键想法是：先用 VAE 把图像压到 latent 空间，在更小的 latent 上做 diffusion，最后再 decode 回图片。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">image
+-&gt; VAE encoder
+-&gt; latent
+-&gt; diffusion denoising in latent space
+-&gt; VAE decoder
+-&gt; image</code></pre></figure>
+<p>Stable Diffusion 属于 text-to-image latent diffusion。它的核心组件通常是：</p>
+<div class="table-wrap"><table><thead><tr><th>组件</th><th>作用</th></tr></thead><tbody><tr><td>Text Encoder</td><td>把 prompt 编成文本条件</td></tr>
+<tr><td>VAE Encoder/Decoder</td><td>在图像和 latent 之间转换</td></tr>
+<tr><td>Denoiser U-Net / Transformer</td><td>在 latent 空间预测噪声</td></tr>
+<tr><td>Scheduler</td><td>控制采样时间步和更新公式</td></tr></tbody></table></div>
+<h2 id="prompt-如何影响图像-cross-attention">Prompt 如何影响图像：Cross-Attention</h2>
+<p>Text-to-image 模型需要让图像 latent “看见”文本。常见方式是 cross-attention：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">query: image latent tokens
+key/value: text tokens</code></pre></figure>
+<p>也就是说，去噪网络在每一步不仅看当前 noisy latent，还会读 prompt 的文本表示。prompt 不是最后贴标签，而是参与每一步去噪。</p>
+<h2 id="classifier-free-guidance-让-prompt-更有力">Classifier-Free Guidance：让 prompt 更有力</h2>
+<p>CFG 的直觉是：同一步去噪做两次预测，一次带 prompt，一次不带 prompt，然后把差值放大。</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">eps_uncond = denoiser(x, t, empty_prompt)
+eps_cond = denoiser(x, t, prompt)
+eps = eps_uncond + guidance_scale * (eps_cond - eps_uncond)</code></pre></figure>
+<p><code>guidance_scale</code> 太小，图像可能不听 prompt；太大，图像可能过饱和、变形或失去多样性。</p>
+<h2 id="dit-把-u-net-换成-transformer">DiT：把 U-Net 换成 Transformer</h2>
+<p>Stable Diffusion 早期主干多是 U-Net。DiT 的方向是：在 latent patch 上使用 Transformer 作为 denoiser。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">latent image
+-&gt; patch tokens
+-&gt; Transformer blocks with timestep/class/text conditioning
+-&gt; predicted noise</code></pre></figure>
+<p>这和 ViT、多模态、LLM 主线又接上了：图片 latent 也可以变成 token 序列，Transformer 不只用于文本。</p>
+<h2 id="看生图模型代码时的五个问题">看生图模型代码时的五个问题</h2>
+<ol><li>模型在像素空间还是 latent 空间扩散？</li><li>denoiser 是 U-Net、Transformer，还是混合结构？</li><li>模型预测的是 noise、x0，还是 velocity？</li><li>文本条件通过 cross-attention、AdaLN，还是其他条件注入方式进入？</li><li>scheduler 和 guidance scale 如何影响速度、质量和稳定性？</li></ol>
+<h2 id="和-llm-的关系">和 LLM 的关系</h2>
+<p>Diffusion 和 LLM 的目标不同，但工程问题很像：</p>
+<div class="table-wrap"><table><thead><tr><th>LLM</th><th>Diffusion</th></tr></thead><tbody><tr><td>token embedding</td><td>image/latent patch embedding</td></tr>
+<tr><td>causal self-attention</td><td>spatial/latent attention</td></tr>
+<tr><td>next-token loss</td><td>noise prediction loss</td></tr>
+<tr><td>sampler: top-k/top-p/temperature</td><td>sampler: DDIM/Euler/DPM-Solver</td></tr>
+<tr><td>prompt conditioning</td><td>text encoder + cross-attention</td></tr></tbody></table></div>
+<p>如果读者已经理解 Transformer 和 token，这一章的关键就是把“token 序列”泛化到“图像 patch/latent token 序列”。</p>
+<h2 id="参考">参考</h2>
+<ul><li><a href="https://arxiv.org/abs/2006.11239">Denoising Diffusion Probabilistic Models</a></li><li><a href="https://arxiv.org/abs/2112.10752">High-Resolution Image Synthesis with Latent Diffusion Models</a></li><li><a href="https://huggingface.co/docs/diffusers/en/api/pipelines/stable_diffusion/overview">Stable Diffusion pipelines in Diffusers</a></li><li><a href="https://huggingface.co/docs/diffusers/en/index">Hugging Face Diffusers</a></li><li><a href="https://arxiv.org/abs/2212.09748">Scalable Diffusion Models with Transformers</a></li><li><a href="https://github.com/facebookresearch/dit">Official DiT repository</a></li></ul>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./22_multimodal_vit_clip_vlm.html"><span>上一篇</span><strong>多模态小系列：从 ViT、CLIP、ClipCap 到现代 VLM/VLA</strong></a>
+        <span class="article-nav-empty">下一篇</span>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/23_diffusion_image_generation.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

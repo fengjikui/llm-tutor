@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="比较学习率、优化器、weight decay 和 Dropout，理解训练策略如何影响同一个神经网络。" />
+    <title>05. 训练神经网络的基本功 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/05_training_neural_networks.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            最小地基 / Chapter 05
+          </p>
+          <h1>05. 训练神经网络的基本功</h1>
+          <p class="article-summary">比较学习率、优化器、weight decay 和 Dropout，理解训练策略如何影响同一个神经网络。</p>
+          <div class="article-tags"><span>optimizer</span><span>dropout</span><span>schedule</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#学习率">学习率</a>
+<a class="toc-level-2" href="#优化器">优化器</a>
+<a class="toc-level-2" href="#weight-decay">Weight Decay</a>
+<a class="toc-level-2" href="#dropout">Dropout</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#怎么看结果">怎么看结果</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#常见失败">常见失败</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：训练稳定性、学习率、batch size、正则化、过拟合和欠拟合。</li><li>实验要验证：同一个模型结构下，训练配置会显著影响 loss 曲线和泛化表现。</li><li>实验不验证：它不是调参秘籍，也不能保证某组超参数在所有任务上最好。</li><li>跑完重点看：train/val 曲线是否一起下降，是否出现训练集好但验证集差，以及不同配置的最终测试指标。</li></ul>
+<p>到目前为止，我们已经知道神经网络的基本训练闭环：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">前向传播 -&gt; 计算 loss -&gt; 反向传播 -&gt; 优化器更新参数</code></pre></figure>
+<p>但真实训练时，模型结构只是故事的一半。另一半是训练策略：学习率怎么选、优化器用什么、要不要正则化、模型是否已经过拟合。</p>
+<p>这一章不引入新任务，而是继续使用前面的表格分类数据。这样做的好处是：数据和主体网络结构不变，我们更容易观察训练策略本身的影响。少数配置会加入训练期正则化层，例如 Dropout；这会改变训练时的模型行为，但不是换一个完全不同的任务。</p>
+<h2 id="学习率">学习率</h2>
+<p>学习率决定每次参数更新走多远：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">参数 = 参数 - learning_rate * 梯度</code></pre></figure>
+<p>学习率太小，loss 下降很慢；学习率太大，训练可能震荡，甚至越训越差。</p>
+<p>不要把学习率理解成“越大越快”。它更像步子大小：步子太小走得慢，步子太大可能跨过最低点。</p>
+<h2 id="优化器">优化器</h2>
+<p>SGD 会沿着当前梯度方向更新参数。加上 momentum 后，它会带一点“惯性”，让更新方向不至于每个 batch 都剧烈摇摆。</p>
+<p>Adam 会为不同参数自适应调整更新幅度。很多深度学习任务里，Adam 是一个非常好用的默认选择，尤其适合快速跑通实验。</p>
+<p>这不表示 Adam 永远更好。优化器选择要结合任务、学习率、batch size 和训练时长一起看。</p>
+<p>初学时可以先把三者这样区分：</p>
+<div class="table-wrap"><table><thead><tr><th>优化器</th><th>直觉</th><th>你可能看到的现象</th></tr></thead><tbody><tr><td>SGD</td><td>完全按当前梯度走</td><td>简单、稳定，但可能慢</td></tr>
+<tr><td>SGD + momentum</td><td>带一点历史方向</td><td>比普通 SGD 少一点抖动</td></tr>
+<tr><td>Adam</td><td>给不同参数自适应步长</td><td>常常更快跑通，但需要注意泛化和学习率</td></tr></tbody></table></div>
+<p>本章实验不是为了宣布谁最好，而是让你第一次看到“训练策略会改变曲线形状”。</p>
+<h2 id="weight-decay">Weight Decay</h2>
+<p>Weight decay 会惩罚过大的参数，让模型不要把某些权重推得太极端。它是一种常见正则化方式。</p>
+<p>直觉上，它在提醒模型：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">如果两个解在训练集上差不多好，优先选择参数更温和的那个。</code></pre></figure>
+<h2 id="dropout">Dropout</h2>
+<p>Dropout 会在训练时随机把一部分隐藏单元置零。它迫使网络不要过度依赖某几个神经元。PyTorch 的 Dropout 还会对保留下来的激活做缩放，让整体激活幅度在训练和评估之间更接近。</p>
+<p>注意：Dropout 只在 <code>model.train()</code> 阶段生效；到了 <code>model.eval()</code> 阶段，它会被关闭。这就是上一章强调训练模式和评估模式的原因。</p>
+<p>Weight decay 和 Dropout 都叫正则化，但它们作用的位置不同：</p>
+<div class="table-wrap"><table><thead><tr><th>方法</th><th>作用位置</th><th>直觉</th></tr></thead><tbody><tr><td>Weight decay</td><td>loss/参数更新</td><td>惩罚过大的权重</td></tr>
+<tr><td>Dropout</td><td>训练期前向传播</td><td>随机屏蔽隐藏单元，减少互相依赖</td></tr></tbody></table></div>
+<p>后面训练语言模型时，你还会看到 dropout 出现在 embedding、attention 或 MLP 附近；weight decay 则通常由优化器配置控制。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.compare_training_strategies --epochs 12</code></pre></figure>
+<p>脚本会比较几种配置：</p>
+<ul><li><code>adam_lr_1e-3</code></li><li><code>adam_lr_1e-2</code></li><li><code>sgd_momentum_lr_1e-2</code></li><li><code>adam_weight_decay</code></li><li><code>adam_dropout</code></li><li><code>adam_weight_decay_dropout</code></li></ul>
+<p>脚本先输出 validation summary：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">validation summary
+strategy                       val_loss  val_acc  malignant_val_f1
+adam_lr_1e-3                   ...
+adam_lr_1e-2                   ...
+sgd_momentum_lr_1e-2           ...
+adam_weight_decay              ...
+adam_dropout                   ...
+adam_weight_decay_dropout      ...</code></pre></figure>
+<p>然后按 validation loss 选择一个配置，最后只对这个配置报告一次 test 指标。</p>
+<h2 id="怎么看结果">怎么看结果</h2>
+<p>比较策略时先看 <code>val_loss</code>，它比训练 loss 更能反映模型有没有泛化。不要用 test set 来挑配置；test set 应该留到最后，只用于报告一次最终效果。</p>
+<p>如果某个配置训练 loss 很低，但验证 loss 不好，说明它可能过拟合。 如果某个配置 loss 一直降不下去，优先怀疑学习率、优化器或输入预处理。</p>
+<p>注意，单次实验只能提供线索，不能证明严格因果。比如 <code>adam_weight_decay_dropout</code> 表现更好时，你不能立刻断言“一定是 Dropout 起作用”，因为它同时改变了 weight decay 和 Dropout。脚本把 <code>adam_weight_decay</code>、<code>adam_dropout</code> 也单独列出来，就是为了帮助你观察组合配置和单独配置的差异。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>同一个模型，训练策略不同，结果也会不同。</li><li>Adam 通常更容易快速跑通，但不是理论上永远最优。</li><li>正则化的价值不一定在小数据、短训练里立刻显现，但它是后续大模型训练的重要基础。</li><li>模型选择应该主要依赖 validation set，test set 留给最终报告。</li></ul>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它不能证明某个优化器在所有任务上最好。</li><li>它不能证明 Dropout 一定提高指标。</li><li>它不能证明测试集最高的配置就适合真实业务。</li><li>它不能从一次小实验里严格分离所有因素的因果影响。</li></ul>
+<h2 id="常见失败">常见失败</h2>
+<ul><li>指标波动：小数据集上很正常，可以固定随机种子并重复多次。</li><li>Dropout 配置短期效果变差：正则化会让训练更难一些，但可能改善泛化。</li><li>SGD 看起来慢：可以增加 epoch，或尝试不同学习率。</li></ul>
+<p>上一章：<a href="./04_neural_network_basics.html">04. 神经网络基础</a> 下一章：<a href="./06_cnn_image_classification.html">06. CNN 为什么适合图像</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./04_neural_network_basics.html"><span>上一篇</span><strong>神经网络基础：从线性模型到多层非线性函数</strong></a>
+        <a href="./06_cnn_image_classification.html"><span>下一篇</span><strong>CNN 为什么适合图像</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/05_training_neural_networks.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

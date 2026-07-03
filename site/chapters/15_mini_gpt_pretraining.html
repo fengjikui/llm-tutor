@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="在 mini-GPT 上加入 checkpoint、validation loss、梯度裁剪和 temperature/top-k/top-p 采样，让实验从能跑变成可复现。" />
+    <title>15. 小型 GPT 预训练工程化 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/15_mini_gpt_pretraining.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Transformer / Chapter 15
+          </p>
+          <h1>15. 小型 GPT 预训练工程化</h1>
+          <p class="article-summary">在 mini-GPT 上加入 checkpoint、validation loss、梯度裁剪和 temperature/top-k/top-p 采样，让实验从能跑变成可复现。</p>
+          <div class="article-tags"><span>pretrain</span><span>checkpoint</span><span>sampling</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#validation-loss">Validation Loss</a>
+<a class="toc-level-2" href="#gradient-clipping">Gradient Clipping</a>
+<a class="toc-level-2" href="#checkpoint">Checkpoint</a>
+<a class="toc-level-2" href="#temperature">Temperature</a>
+<a class="toc-level-2" href="#top-k">Top-k</a>
+<a class="toc-level-2" href="#top-p">Top-p</a>
+<a class="toc-level-2" href="#运行-smoke-版实验">运行 smoke 版实验</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：validation loss、checkpoint、梯度裁剪、temperature/top-k/top-p 采样。</li><li>实验要验证：mini-GPT 的训练结果可以保存、加载、生成，并通过采样参数观察输出变化。</li><li>实验不验证：它不是大模型预训练工程，也不覆盖分布式训练、混合精度或数据管线。</li><li>跑完重点看：train/val loss、checkpoint 路径、重新加载后能否生成，以及固定 prompt 下采样参数改变带来的差异。</li></ul>
+<p>第 13、14 章已经讲清楚了 GPT 的结构和 loss。第 15 章开始补一点训练工程。</p>
+<p>这里的“工程化”不是大规模分布式训练，而是先把最小实验变得可复现、可保存、可加载、可比较：</p>
+<ul><li>训练时记录 train loss 和 validation loss；</li><li>反向传播后做 gradient clipping；</li><li>保存带训练配置和数据元信息的 checkpoint；</li><li>单独写生成脚本；</li><li>比较 temperature、top-k、top-p 对输出的影响。</li></ul>
+<h2 id="validation-loss">Validation Loss</h2>
+<p>训练 loss 只能说明模型在训练样本上的拟合情况。validation loss 更接近“没见过的数据上预测下一个 token 的能力”。</p>
+<p>上一章我们已经修正了语言模型数据切分：先按连续文本范围切 train/val，再各自生成滑动窗口，中间留出 <code>block_size</code> 的 gap，避免几乎相同的窗口同时出现在训练集和验证集。</p>
+<h2 id="gradient-clipping">Gradient Clipping</h2>
+<p>语言模型训练中，梯度偶尔会变得很大。第 15 章训练脚本在 <code>loss.backward()</code> 后加入：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)</code></pre></figure>
+<p>它不会让模型变强，但能让小实验更稳定。</p>
+<h2 id="checkpoint">Checkpoint</h2>
+<p>checkpoint 至少需要保存：</p>
+<ul><li>模型参数 <code>model_state</code>；</li><li>优化器状态 <code>optimizer_state</code>；</li><li>模型结构配置 <code>config</code>；</li><li>字符词表 <code>vocab_id_to_token</code>；</li><li>训练参数 <code>training_args</code>；</li><li>数据切分信息 <code>data_meta</code>；</li><li>当前 epoch；</li><li>train/validation loss。</li></ul>
+<p>训练并保存：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_mini_gpt \
+  --epochs 20 \
+  --checkpoint-path checkpoints/mini_gpt.pt</code></pre></figure>
+<p>如果希望把配置、逐 epoch loss、生成样例、终端输出和 checkpoint 放进同一个可复盘目录，可以使用 <code>--output-dir</code>：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_mini_gpt \
+  --epochs 2 \
+  --output-dir runs/mini-gpt-smoke</code></pre></figure>
+<p>这个目录会包含 <code>config.json</code>、<code>metrics.jsonl</code>、<code>summary.json</code>、<code>stdout.log</code> 和 <code>mini_gpt.pt</code>。如果你同时传入 <code>--checkpoint-path</code>，checkpoint 会写到你指定的位置，summary 里会记录这个路径。</p>
+<p>加载并生成：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.generate_with_mini_gpt \
+  --checkpoint-path checkpoints/mini_gpt.pt \
+  --prompt "the " \
+  --max-new-tokens 120</code></pre></figure>
+<p>生成脚本也支持 <code>--output-dir</code>，适合保存同一个 checkpoint 在不同 temperature、top-k、top-p 下的输出对比。</p>
+<h2 id="temperature">Temperature</h2>
+<p>temperature 控制采样分布的尖锐程度：</p>
+<ul><li><code>temperature &lt; 1</code>：更保守，更偏向高概率 token；</li><li><code>temperature = 1</code>：使用原始 logits；</li><li><code>temperature &gt; 1</code>：更随机，更容易发散。</li></ul>
+<p>用三个候选 token 做个直觉例子：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">原始概率:  A=0.70, B=0.20, C=0.10
+低温采样:  A 更接近 1，输出更保守
+高温采样:  B/C 的机会变大，输出更多样也更容易乱</code></pre></figure>
+<p>temperature 不会创造新知识，它只改变“从当前模型认为可能的 token 里怎么抽样”。</p>
+<h2 id="top-k">Top-k</h2>
+<p>top-k 每一步通常只保留概率最高的 <code>k</code> 个 token，再从这些 token 里采样。本项目教学实现按阈值过滤，如果第 <code>k</code> 名附近出现完全相同的 logits，并列 token 可能会被一起保留。</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.generate_with_mini_gpt \
+  --checkpoint-path checkpoints/mini_gpt.pt \
+  --top-k 5</code></pre></figure>
+<p>top-k 越小，输出越保守。</p>
+<h2 id="top-p">Top-p</h2>
+<p>top-p 又叫 nucleus sampling。它不是固定保留 <code>k</code> 个 token，而是从高到低累计概率，保留累计概率达到 <code>p</code> 的最小 token 集合。</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.generate_with_mini_gpt \
+  --checkpoint-path checkpoints/mini_gpt.pt \
+  --top-p 0.9</code></pre></figure>
+<p>真实 LLM 生成常常会组合使用 temperature 和 top-p。</p>
+<p>本项目的组合顺序是：先用 temperature 缩放 logits，再做 top-k 过滤，再在过滤后的分布上做 top-p。</p>
+<h2 id="运行-smoke-版实验">运行 smoke 版实验</h2>
+<p>为了让 smoke test 很快完成，课程里使用较小模型和很少 epoch：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_mini_gpt \
+  --epochs 2 \
+  --batch-size 16 \
+  --block-size 32 \
+  --embed-dim 32 \
+  --num-layers 1</code></pre></figure>
+<p>这个输出不会像自然语言，但它能验证训练、保存、加载和生成这条路径。</p>
+<p>保存下来的 <code>metrics.jsonl</code> 可以一行行对照 train/validation loss；<code>summary.json</code> 则适合快速看最后 loss、生成样例和 checkpoint 位置。后面做更大实验时，不要只保留“最后一句生成结果”，训练过程本身也是实验结论的一部分。</p>
+<p>默认脚本会优先使用 CUDA；没有 GPU 时会自动落到 CPU。当前课程的默认 smoke 参数按 CPU 可跑设计，4090 这类显卡只有在你想扩大语料、模型尺寸、训练轮数或做更真实的后训练实验时才有必要。</p>
+<h2 id="下一步">下一步</h2>
+<p>下一章进入 SFT。你会看到：SFT 不是把 GPT 换成另一个模型，而是把数据组织成 instruction/response 格式，并对 label 做 mask。</p>
+<p>上一章：<a href="./14_gpt_data_target_loss.html">14. GPT 的训练数据、目标数据和损失函数</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./14_gpt_data_target_loss.html"><span>上一篇</span><strong>GPT 的训练数据、目标数据和损失函数</strong></a>
+        <a href="./16_sft_instruction_tuning.html"><span>下一篇</span><strong>SFT：让模型学会按指令回答</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/15_mini_gpt_pretraining.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

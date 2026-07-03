@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用 Fashion-MNIST 图像分类理解卷积核、局部感受野、参数共享、池化和图像张量 shape。" />
+    <title>06. CNN 为什么适合图像 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/06_cnn_image_classification.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            视觉与序列 / Chapter 06
+          </p>
+          <h1>06. CNN 为什么适合图像</h1>
+          <p class="article-summary">用 Fashion-MNIST 图像分类理解卷积核、局部感受野、参数共享、池化和图像张量 shape。</p>
+          <div class="article-tags"><span>CNN</span><span>vision</span><span>Fashion-MNIST</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#mlp-看图像的问题">MLP 看图像的问题</a>
+<a class="toc-level-2" href="#卷积核和局部感受野">卷积核和局部感受野</a>
+<a class="toc-level-2" href="#参数共享">参数共享</a>
+<a class="toc-level-2" href="#padding-stride-和-pooling">Padding、Stride 和 Pooling</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#常见失败">常见失败</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：图像张量、卷积核、局部感受野、参数共享、池化。</li><li>实验要验证：当输入从表格变成图像时，训练闭环不变，但模型结构要尊重数据的空间结构。</li><li>实验不验证：它不是视觉方向完整入门，也不能说明 Fashion-MNIST 高分等于真实视觉可靠。</li><li>跑完重点看：输入 shape 是否是 <code>[batch, channels, height, width]</code>，<code>val_acc</code>/<code>macro_f1</code> 是否随训练改善，第一次运行是否成功缓存数据。</li></ul>
+<p>前几章处理的是表格特征：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x [batch, num_features]</code></pre></figure>
+<p>图像不一样。图像天然有空间结构：相邻像素之间的关系很重要，横向、纵向、局部纹理都携带信息。</p>
+<p>你可能会问：既然后面重点是 LLM，为什么还要学 CNN？原因不是要把你带到视觉方向，而是 CNN 是理解“模型结构如何利用数据形状”的最好例子之一。</p>
+<p>到目前为止，输入形状在一路变化：</p>
+<div class="table-wrap"><table><thead><tr><th>阶段</th><th>输入 shape</th><th>模型主要偏置</th></tr></thead><tbody><tr><td>表格</td><td><code>[batch, features]</code></td><td>每个特征是普通数值列</td></tr>
+<tr><td>图像</td><td><code>[batch, channels, height, width]</code></td><td>局部空间模式和参数共享</td></tr>
+<tr><td>文本序列</td><td><code>[batch, seq_len]</code></td><td>顺序、上下文和 token 依赖</td></tr></tbody></table></div>
+<p>训练闭环仍然是前向传播、loss、反向传播、更新参数；真正变化的是模型如何看待输入结构。</p>
+<p>在 PyTorch 里，一批灰度图像通常长这样：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x [batch, channels, height, width]</code></pre></figure>
+<p>Fashion-MNIST 是 28x28 灰度图，所以输入 shape 是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, 1, 28, 28]</code></pre></figure>
+<h2 id="mlp-看图像的问题">MLP 看图像的问题</h2>
+<p>如果把图像直接拉平成一条向量：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[1, 28, 28] -&gt; [784]</code></pre></figure>
+<p>普通全连接网络确实也能训练，但它会丢掉一个重要直觉：相邻像素本来是相邻的。模型必须从数据里重新学会“局部像素组合很重要”这件事。</p>
+<p>CNN 直接把这个直觉写进结构里。</p>
+<p>参数量也能说明问题。第一层 <code>Conv2d(1, 16, 3x3)</code> 的参数量是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">16 * 1 * 3 * 3 + 16 = 160</code></pre></figure>
+<p>如果把 28x28 图像拉平后直接接到 16 个隐藏单元，全连接层参数是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">784 * 16 + 16 = 12560</code></pre></figure>
+<p>卷积层参数更少，并不是因为它偷懒，而是因为它假设“同一种局部模式可以出现在图像不同位置”。</p>
+<h2 id="卷积核和局部感受野">卷积核和局部感受野</h2>
+<p>卷积层不会一次看完整张图，而是用一个小窗口在图像上滑动。例如 <code>3x3</code> 卷积核每次只看一个局部区域。</p>
+<p>这叫局部感受野。它适合图像，因为边缘、角点、纹理、局部形状通常都出现在小区域里。</p>
+<h2 id="参数共享">参数共享</h2>
+<p>同一个卷积核会在整张图上重复使用。它在左上角检测边缘，也可以在右下角检测边缘。</p>
+<p>这叫参数共享。它带来两个好处：</p>
+<ul><li>参数更少，不需要每个位置都学一套独立权重。</li><li>对位置变化更稳健，同一种局部模式出现在不同位置时仍能被识别。</li></ul>
+<h2 id="padding-stride-和-pooling">Padding、Stride 和 Pooling</h2>
+<p><code>padding</code> 会在图像边缘补像素，让卷积后尺寸不要缩得太快。 <code>stride</code> 控制卷积核每次移动几格。 <code>pooling</code> 会把局部区域压缩成更小的特征图，例如 MaxPool 会保留局部最大响应。</p>
+<p>本章的小 CNN 结构是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, 1, 28, 28]
+-&gt; Conv2d(1 -&gt; 16, 3x3, padding=1)
+-&gt; ReLU
+-&gt; MaxPool2d(2)         # [batch, 16, 14, 14]
+-&gt; Conv2d(16 -&gt; 32, 3x3, padding=1)
+-&gt; ReLU
+-&gt; MaxPool2d(2)         # [batch, 32, 7, 7]
+-&gt; Flatten              # [batch, 32 * 7 * 7] = [batch, 1568]
+-&gt; Linear(1568 -&gt; 64)
+-&gt; ReLU
+-&gt; Linear(64 -&gt; 10)
+-&gt; logits [batch, 10]</code></pre></figure>
+<p>其中高宽从 28 变成 14，再变成 7，主要来自 <code>MaxPool2d(2)</code>：每次把 <code>2x2</code> 局部区域压成一个值，所以 height/width 大约减半。<code>padding=1</code> 的 <code>3x3</code> 卷积会尽量保持卷积前后的高宽不变。</p>
+<h2 id="运行实验">运行实验</h2>
+<p>首次运行会把 Fashion-MNIST 下载到 <code>data/vision</code>。下载只发生一次，后续会直接复用缓存。</p>
+<p>快速 smoke test：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_cnn \
+  --epochs 1 \
+  --train-limit 512 \
+  --val-limit 128 \
+  --test-limit 128</code></pre></figure>
+<p>稍微认真一点的 CPU 实验：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_cnn \
+  --epochs 5 \
+  --train-limit 10000 \
+  --val-limit 2000 \
+  --test-limit 2000</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">epoch=01 train_loss=... val_loss=... val_acc=... val_f1=...
+test loss=... acc=... macro_f1=...</code></pre></figure>
+<p>这里训练日志里的 <code>val_f1</code> 是 10 类 macro-F1，不再是前几章二分类里的 malignant F1。最终测试输出会显式写成 <code>macro_f1</code>，提醒你它是多分类平均指标。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>图像 batch 的 shape 和表格数据不同。</li><li>CNN 把“局部模式”和“参数共享”写进模型结构。</li><li>同一个训练循环可以从表格分类迁移到图像分类。</li></ul>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它不能说明 CNN 是所有视觉任务的最终答案。</li><li>它不能说明 Fashion-MNIST 高分等于真实视觉系统可靠。</li><li>它不能说明模型理解了衣服，只能说明它学到了对这个数据集有用的视觉模式。</li></ul>
+<h2 id="常见失败">常见失败</h2>
+<ul><li>第一次运行卡在下载：通常是网络慢，不是训练慢。</li><li>shape 报错：检查输入是否是 <code>[batch, channels, height, width]</code>。</li><li>训练很慢：先减少 <code>train-limit</code> 和 <code>epochs</code>，确认流程通了再扩大。</li><li>F1 很低但 accuracy 还行：可能是某些类别学得很差，后面可以看混淆矩阵。</li></ul>
+<p>上一章：<a href="./05_training_neural_networks.html">05. 训练神经网络的基本功</a> 下一章：<a href="./07_rnn_sequence_modeling.html">07. RNN：让模型读序列</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./05_training_neural_networks.html"><span>上一篇</span><strong>训练神经网络的基本功</strong></a>
+        <a href="./07_rnn_sequence_modeling.html"><span>下一篇</span><strong>RNN：让模型读序列</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/06_cnn_image_classification.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

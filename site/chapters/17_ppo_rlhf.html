@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用一个 tiny bandit 实验解释 PPO 的 policy、old policy、advantage、ratio、clipping、entropy 和 KL penalty。" />
+    <title>17. PPO：经典 RLHF 的核心优化器 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/17_ppo_rlhf.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Post-training / Chapter 17
+          </p>
+          <h1>17. PPO：经典 RLHF 的核心优化器</h1>
+          <p class="article-summary">用一个 tiny bandit 实验解释 PPO 的 policy、old policy、advantage、ratio、clipping、entropy 和 KL penalty。</p>
+          <div class="article-tags"><span>PPO</span><span>RLHF</span><span>policy</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#policy-action-和-reward">Policy、Action 和 Reward</a>
+<a class="toc-level-2" href="#old-policy-和-ratio">Old Policy 和 Ratio</a>
+<a class="toc-level-2" href="#advantage">Advantage</a>
+<a class="toc-level-2" href="#clipped-objective">Clipped Objective</a>
+<a class="toc-level-2" href="#kl-penalty-和-entropy">KL Penalty 和 Entropy</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#和-sft-的区别">和 SFT 的区别</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：policy、reward、old policy、ratio、clipping、KL penalty。</li><li>实验要验证：PPO 如何用 reward 鼓励更好的 action，同时用 clipping/KL 限制 policy 一步改得太猛。</li><li>实验不验证：它不是完整 RLHF 系统，也没有训练语言模型生成长文本。</li><li>跑完重点看：平均 reward 是否上升，policy 是否偏向高 reward action，KL/ratio 是否提醒更新幅度。</li></ul>
+<p>PPO 是 RLHF 里最经典的一类优化器。真实 RLHF 会让语言模型生成回答，再用 reward model 打分，并用 PPO 更新 policy。</p>
+<p>这一章先不直接训练 mini-GPT 生成长文本，而是用一个 tiny bandit 实验把 PPO 公式讲清楚：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">prompt -&gt; policy 选择 action -&gt; rule reward 打分 -&gt; PPO 更新 policy</code></pre></figure>
+<p>这样可以先看懂核心优化目标，再把它迁移到语言模型。</p>
+<p>这个实验刻意省略了完整 RLHF 里的很多组件：没有 token-level generation、没有 reward model、没有 value model/GAE、没有 rollout buffer，也没有多轮 prompt-response。它只负责讲清楚 PPO 更新本身。</p>
+<p>教学 bandit 和真实 LLM 的对应关系大致是：</p>
+<div class="table-wrap"><table><thead><tr><th>Bandit 实验</th><th>LLM/RLHF 里对应什么</th></tr></thead><tbody><tr><td>prompt</td><td>用户问题或上下文</td></tr>
+<tr><td>action</td><td>一段 response，内部由多个 token 组成</td></tr>
+<tr><td>policy</td><td>正在训练的语言模型</td></tr>
+<tr><td>old policy</td><td>采样这批回答时的模型快照</td></tr>
+<tr><td>reward rule</td><td>reward model 或可验证规则</td></tr>
+<tr><td>log_prob(action)</td><td>response token log probability 的和或均值</td></tr></tbody></table></div>
+<p>所以本章的 <code>yes/no/ok</code> 只是把“生成一段回答”压缩成了一个离散选择，方便先看清 ratio、clipping 和 KL。</p>
+<h2 id="policy-action-和-reward">Policy、Action 和 Reward</h2>
+<p>本章实验里有三个 prompt：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">say yes
+say no
+say ok</code></pre></figure>
+<p>policy 要在三个 action 里选一个：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">yes / no / ok</code></pre></figure>
+<p>规则 reward 很简单：</p>
+<ul><li>action 等于目标，reward = <code>1.0</code>；</li><li>action 不等于目标，reward = <code>-0.2</code>。</li></ul>
+<p>真实 RLHF 里的 action 是一整段生成文本，reward 通常来自 reward model 或规则评估器。</p>
+<h2 id="old-policy-和-ratio">Old Policy 和 Ratio</h2>
+<p>PPO 更新前会先用当前 policy 采样一批 action，并记录当时的 log probability：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">old_log_prob = log pi_old(action | prompt)</code></pre></figure>
+<p>更新时，再用新的 policy 计算：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">new_log_prob = log pi_new(action | prompt)</code></pre></figure>
+<p>两者相减再取指数：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">ratio = exp(new_log_prob - old_log_prob)</code></pre></figure>
+<p>如果 ratio 很大，说明新 policy 比旧 policy 更想选择这个 action；如果 ratio 很小，说明新 policy 想远离它。</p>
+<h2 id="advantage">Advantage</h2>
+<p>advantage 表示“这个 action 比预期好多少”。完整 PPO 常常会用 value model 估计 baseline。</p>
+<p>本章为了保持实验透明，直接用 rule reward 作为 advantage：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">advantage = reward</code></pre></figure>
+<p>这样读者可以先看懂 clipping，后面再补 value/GAE 等更完整的 RL 细节。</p>
+<p>更完整的直觉是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">advantage = reward - baseline</code></pre></figure>
+<p>如果某个回答得分是 0.8，但模型本来预计这个 prompt 平均能拿 0.7，那么 advantage 只有 0.1；如果本来预计只能拿 0.2，那么 advantage 是 0.6。value model/GAE 的作用就是更稳定地估计这个 baseline。本章跳过它，是为了不让第一个 PPO 实验同时背太多 RL 概念。</p>
+<h2 id="clipped-objective">Clipped Objective</h2>
+<p>PPO 的核心是限制策略更新不要太猛：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">unclipped = ratio * advantage
+clipped = clamp(ratio, 1 - eps, 1 + eps) * advantage
+loss = -mean(min(unclipped, clipped))</code></pre></figure>
+<p>PPO 论文常说“最大化 objective”。代码里写成负号，是因为 PyTorch 优化器默认最小化 loss。</p>
+<p>直觉上：</p>
+<ul><li>如果一个 action 很好，PPO 鼓励提高它的概率；</li><li>但概率不能一下子提高太多；</li><li>如果一个 action 很差，PPO 鼓励降低它的概率；</li><li>但也不希望一步把策略推得太远。</li></ul>
+<h2 id="kl-penalty-和-entropy">KL Penalty 和 Entropy</h2>
+<p>真实 RLHF 通常还会让 policy 不要偏离 reference model 太远。这个约束常写成 KL penalty：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">loss = ppo_policy_loss + beta * KL(policy || reference)</code></pre></figure>
+<p>本章实验里 reference 是一个固定的均匀策略。</p>
+<p>真实语言模型训练通常按生成 token 估计 KL penalty。本章为了教学，直接计算 categorical policy 的完整 <code>KL(policy || reference)</code>。</p>
+<p>这也是一个重要边界：bandit 的 action 空间只有 3 个，所以可以枚举完整分布；LLM 的回答空间巨大，通常只能在实际生成的 token 上近似计算 policy 和 reference 的 logprob 差。</p>
+<p>entropy 则鼓励策略保持一定探索性：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">loss = loss - entropy_coef * entropy</code></pre></figure>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_ppo_bandit --epochs 30</code></pre></figure>
+<p>smoke 版：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_ppo_bandit --epochs 3</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">prompts=3 actions=3
+epoch=001 sampled_reward=... greedy_reward=... policy_loss=... ratio_min=... ratio_max=... clipped_fraction=... kl=... entropy=...
+
+policy
+prompt='say yes' action='yes' target='yes'
+...</code></pre></figure>
+<p>这个实验的目标不是得到一个强模型，而是确认：</p>
+<ul><li>old log prob 和 new log prob 如何形成 ratio；</li><li>clipping 如何进入 loss；</li><li>同一批 rollout 多轮 PPO 更新后，ratio 如何偏离 1；</li><li>KL penalty 如何约束 policy；</li><li>PPO 本质上是在优化“被 reward 引导的采样行为”。</li></ul>
+<h2 id="和-sft-的区别">和 SFT 的区别</h2>
+<p>SFT 直接模仿标准答案：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">prompt + response -&gt; next-token loss</code></pre></figure>
+<p>PPO 则先让 policy 采样 action，再根据 reward 强化或削弱这个 action：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">sample -&gt; reward -&gt; policy update</code></pre></figure>
+<p>这就是 RLHF 相比 SFT 多出来的关键一步。</p>
+<h2 id="下一步">下一步</h2>
+<p>下一章会讲 DPO。DPO 不需要 PPO 这种在线采样循环，而是直接用 chosen/rejected 偏好对构造 loss。</p>
+<p>上一章：<a href="./16_sft_instruction_tuning.html">16. SFT：让模型学会按指令回答</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./16_sft_instruction_tuning.html"><span>上一篇</span><strong>SFT：让模型学会按指令回答</strong></a>
+        <a href="./18_dpo_preference_optimization.html"><span>下一篇</span><strong>DPO：直接偏好优化</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/17_ppo_rlhf.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

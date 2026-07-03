@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用一个表格二分类实验跑通数据、模型、损失、优化和评估的第一条训练闭环。" />
+    <title>01. 机器学习到底在学什么 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/01_machine_learning_basics.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            最小地基 / Chapter 01
+          </p>
+          <h1>01. 机器学习到底在学什么</h1>
+          <p class="article-summary">用一个表格二分类实验跑通数据、模型、损失、优化和评估的第一条训练闭环。</p>
+          <div class="article-tags"><span>ML</span><span>分类</span><span>训练循环</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#一个表格分类例子">一个表格分类例子</a>
+<a class="toc-level-2" href="#线性分类器">线性分类器</a>
+<a class="toc-level-2" href="#为什么要分训练集-验证集-测试集">为什么要分训练集、验证集、测试集</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#常见失败">常见失败</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：监督学习、输入特征、标签、线性分类器、训练/验证/测试拆分。</li><li>实验要验证：一个很简单的模型也能通过 loss 和优化器，从表格数据里学到可复用规律。</li><li>实验不验证：它不是医学模型评测，也不能说明高测试分数就能直接用于真实诊断。</li><li>跑完重点看：<code>train_loss</code> 是否下降，<code>val_acc</code>/<code>val_f1</code> 是否高于随机猜测，最后的 malignant precision/recall/F1 是否暴露不同错误类型。</li></ul>
+<p>机器学习最朴素的说法是：我们给模型一些样本，让它从样本里找到一个可以复用的规律。</p>
+<p>在监督学习里，一个样本通常长这样：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">输入特征 x -&gt; 真实标签 y</code></pre></figure>
+<p>模型要学习的是一个函数：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">model(x) ≈ y</code></pre></figure>
+<p>这里的“学习”不是把训练集答案背下来，而是不断调整模型内部的参数，让模型在训练样本上的错误变小，同时希望它在没见过的新样本上也表现不错。</p>
+<h2 id="一个表格分类例子">一个表格分类例子</h2>
+<p>第一章使用 Breast Cancer Wisconsin 数据集。它包含一组肿瘤细胞测量指标，任务是预测样本属于 malignant 还是 benign。</p>
+<p>这不是因为医学分类是本课程重点，而是因为它非常适合做第一个实验：</p>
+<ul><li>数据量小，CPU 可以快速训练。</li><li>特征是普通数字，方便理解“输入指标 -&gt; 输出类别”。</li><li>不需要下载大型文件，适合作为稳定 smoke test。</li></ul>
+<h2 id="线性分类器">线性分类器</h2>
+<p>我们先训练一个最小模型：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">logits = x @ W + b</code></pre></figure>
+<p>其中：</p>
+<ul><li><code>x</code> 是输入特征。</li><li><code>W</code> 和 <code>b</code> 是模型要学习的参数。</li><li><code>logits</code> 是模型对每个类别给出的原始分数。</li></ul>
+<p>分类时，我们取分数最高的类别作为预测结果。</p>
+<p><code>logits</code> 不是概率，而是模型还没有归一化的原始分数。例如：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">logits = [2.0, 0.5]</code></pre></figure>
+<p>它只表示第一个类别的分数比第二个类别高。经过 softmax 之后，才会变成两个和为 1 的概率。一个小但重要的结论是：<code>argmax(logits)</code> 和 <code>argmax(softmax(logits))</code> 会得到同一个类别，所以训练和预测代码通常直接使用 logits。下一章会解释为什么 PyTorch 的 <code>CrossEntropyLoss</code> 也直接接收 logits。</p>
+<p>这一章暂时不细拆分类 loss。你可以先把它理解成“模型预测和真实标签之间的差距”。下一章会把 MSE、softmax、交叉熵和 PyTorch 的 <code>CrossEntropyLoss</code> 拆开讲清楚。</p>
+<h2 id="为什么要分训练集-验证集-测试集">为什么要分训练集、验证集、测试集</h2>
+<p>如果只看训练集表现，模型可能只是记住了训练样本。为了知道它能不能泛化，我们把数据拆成三份：</p>
+<ul><li>训练集：用来更新参数。</li><li>验证集：用来观察训练过程、调超参数。</li><li>测试集：最后才看，用来估计最终效果。</li></ul>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_linear_classifier --epochs 20</code></pre></figure>
+<p>你会看到每个 epoch 的训练 loss、验证 loss、验证 accuracy 和 F1。最后会输出测试集指标。输出里的 <code>malignant_precision</code>、<code>malignant_recall</code>、<code>malignant_f1</code> 表示我们把 malignant 当作正类来计算指标。</p>
+<p>样例输出大致会长这样：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">epoch=01 train_loss=... val_loss=... val_acc=... val_f1=...
+...
+test loss=... acc=... malignant_precision=... malignant_recall=... malignant_f1=...</code></pre></figure>
+<p>不同机器、不同随机种子下数值会略有波动。你更应该观察趋势：loss 是否下降，验证集指标是否比随机猜测好。</p>
+<p>有时你会看到 loss 下降，但 accuracy 或 F1 暂时没动，甚至小幅波动。这并不矛盾。loss 关注的是模型给真实类别的概率有多高，所以即使最终预测类别还没变，置信度变得更合理也会让 loss 下降。accuracy/F1 只看最后分类结果，对“预测对了但不够自信”或“预测错了但接近改对”不敏感。</p>
+<p>二分类指标最好放到混淆矩阵里理解。这里把 malignant 当作正类：</p>
+<div class="table-wrap"><table><thead><tr><th>真实/预测</th><th>预测 malignant</th><th>预测 benign</th></tr></thead><tbody><tr><td>真实 malignant</td><td>true positive</td><td>false negative</td></tr>
+<tr><td>真实 benign</td><td>false positive</td><td>true negative</td></tr></tbody></table></div>
+<p><code>malignant_recall</code> 关心真实 malignant 里有多少被找出来；<code>malignant_precision</code> 关心预测为 malignant 的样本里有多少是真的。真实医学场景里哪个错误更严重，必须由业务和伦理约束决定，不能只交给一个指标。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<p>它能说明：</p>
+<ul><li>一个简单线性模型也可以通过数据学习有用规律。</li><li>训练过程可以用 loss 曲线和验证指标观察。</li><li>accuracy 不是唯一指标，precision、recall、F1 能帮助观察不同错误类型的比例和取舍。</li></ul>
+<p>它不能说明：</p>
+<ul><li>线性模型足够解决所有问题。</li><li>测试集高分就代表真实业务场景一定可靠。</li><li>模型真的理解了医学概念。</li><li>指标天然知道哪个错误更严重。真实医学任务必须先明确更关心 malignant 还是 benign。</li></ul>
+<p>这章最重要的是建立第一个闭环：数据进入模型，模型输出预测，损失函数衡量错误，优化器更新参数。</p>
+<h2 id="常见失败">常见失败</h2>
+<ul><li>如果命令找不到 <code>llm_tutor</code>，先运行 <code>uv sync --python 3.12</code>。</li><li>如果 loss 完全不下降，先检查学习率、数据标准化和标签 shape。</li><li>如果只看 accuracy，可能会忽略某一类被系统性预测错的问题。</li></ul>
+<p>下一章：<a href="./02_loss_gradient_optimizer.html">02. 损失函数、梯度下降和优化器</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <span class="article-nav-empty">上一篇</span>
+        <a href="./02_loss_gradient_optimizer.html"><span>下一篇</span><strong>损失函数、梯度下降和优化器</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/01_machine_learning_basics.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

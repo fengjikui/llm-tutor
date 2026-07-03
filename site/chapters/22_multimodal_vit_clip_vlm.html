@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="理解图像如何变成 token，CLIP 如何做图文对齐，ClipCap 如何把 CLIP 图像表示映射成语言模型 prefix，并一路过渡到 Qwen3-VL、Qwen3.5-Omni、Qwen-VLA 和 encoder-free multimodal。" />
+    <title>22. 多模态小系列：从 ViT、CLIP、ClipCap 到现代 VLM/VLA | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/22_multimodal_vit_clip_vlm.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            现代扩展 / Chapter 22
+          </p>
+          <h1>22. 多模态小系列：从 ViT、CLIP、ClipCap 到现代 VLM/VLA</h1>
+          <p class="article-summary">理解图像如何变成 token，CLIP 如何做图文对齐，ClipCap 如何把 CLIP 图像表示映射成语言模型 prefix，并一路过渡到 Qwen3-VL、Qwen3.5-Omni、Qwen-VLA 和 encoder-free multimodal。</p>
+          <div class="article-tags"><span>ClipCap</span><span>Qwen3-VL</span><span>VLA</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#vit-把图片切成-patch-再当序列处理">ViT：把图片切成 patch，再当序列处理</a>
+<a class="toc-level-2" href="#clip-图片和文字进入同一个语义空间">CLIP：图片和文字进入同一个语义空间</a>
+<a class="toc-level-2" href="#clipcap-把-clip-图像表示变成语言模型-prefix">ClipCap：把 CLIP 图像表示变成语言模型 prefix</a>
+<a class="toc-level-2" href="#blip-blip-2-用桥接模块降低训练成本">BLIP/BLIP-2：用桥接模块降低训练成本</a>
+<a class="toc-level-2" href="#llava-把视觉-token-投到-llm-的词向量空间">LLaVA：把视觉 token 投到 LLM 的词向量空间</a>
+<a class="toc-level-2" href="#现代-vlm-qwen3-vl-qwen3-5-omni-和动态多模态">现代 VLM：Qwen3-VL、Qwen3.5-Omni 和动态多模态</a>
+<a class="toc-level-2" href="#encoder-free-multimodal-google-gemma-4-这条新分支">Encoder-Free Multimodal：Google Gemma 4 这条新分支</a>
+<a class="toc-level-2" href="#看-vlm-代码时的五个问题">看 VLM 代码时的五个问题</a>
+<a class="toc-level-2" href="#参考">参考</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：ViT patch token、图文对比学习、ClipCap/prefix mapping、captioning loss、Q-Former、visual projector、visual instruction tuning、动态分辨率、VLA、encoder-free multimodal。</li><li>本章要解决：读者看到现代多模态模型时，知道“图片怎么进入 LLM”。</li><li>本章不验证：不训练 VLM，不跑图像问答 benchmark。</li><li>看完重点：多模态模型不是把图片塞进 tokenizer，而是先把图片编码成视觉 token，再用投影/交叉注意力/对齐训练接到语言空间。</li></ul>
+<p>如果前 21 章讲的是“文本 token 进入 Transformer”，多模态主线就是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">image
+-&gt; patches / vision encoder
+-&gt; visual tokens
+-&gt; projector / cross-attention / Q-Former
+-&gt; language model token space
+-&gt; text generation or contrastive retrieval</code></pre></figure>
+<p>先把术语写正式：</p>
+<div class="table-wrap"><table><thead><tr><th>缩写</th><th>正式含义</th><th>本章怎么用</th></tr></thead><tbody><tr><td>ViT</td><td>Vision Transformer</td><td>把图片切成 patch token 的视觉骨架</td></tr>
+<tr><td>CLIP</td><td>Contrastive Language-Image Pre-training</td><td>图文对齐模型</td></tr>
+<tr><td>ClipCap</td><td>CLIP Prefix for Image Captioning</td><td>把 CLIP 图像表示映射成语言模型 prefix</td></tr>
+<tr><td>VLM</td><td>Vision-Language Model</td><td>看图/视频并输出文字</td></tr>
+<tr><td>MLLM</td><td>Multimodal Large Language Model</td><td>更广义的多模态大模型</td></tr>
+<tr><td>VLA</td><td>Vision-Language-Action Model</td><td>看见世界、理解指令并输出动作</td></tr></tbody></table></div>
+<h2 id="vit-把图片切成-patch-再当序列处理">ViT：把图片切成 patch，再当序列处理</h2>
+<p>CNN 看图像时用卷积核滑动。ViT 的做法更接近 Transformer：把图片切成固定大小 patch，每个 patch 展平成向量，再投影成 token。</p>
+<p>最小 patchify 示意：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">import torch
+
+def patchify(images: torch.Tensor, patch_size: int) -&gt; torch.Tensor:
+    # images: [batch, channels, height, width]
+    b, c, h, w = images.shape
+    patches = images.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
+    patches = patches.permute(0, 2, 3, 1, 4, 5)
+    return patches.reshape(b, -1, c * patch_size * patch_size)</code></pre></figure>
+<p>ViT 让“图片”变成“视觉 token 序列”。后续 CLIP、BLIP、LLaVA、Qwen-VL 这类模型都离不开这个直觉。</p>
+<h2 id="clip-图片和文字进入同一个语义空间">CLIP：图片和文字进入同一个语义空间</h2>
+<p>CLIP 的核心训练目标很直接：一批图片和一批文字描述放在一起，模型要判断哪张图配哪句话。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">image_encoder(image) -&gt; image_embedding
+text_encoder(text)   -&gt; text_embedding
+相似度矩阵: image_embedding @ text_embedding.T
+目标: 对角线匹配最高</code></pre></figure>
+<p>最小 loss 形状：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">import torch
+from torch.nn import functional as F
+
+image_emb = F.normalize(image_emb, dim=-1)
+text_emb = F.normalize(text_emb, dim=-1)
+logits = image_emb @ text_emb.T
+labels = torch.arange(logits.shape[0], device=logits.device)
+loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2</code></pre></figure>
+<p>CLIP 的意义在于：它让文字可以指挥视觉分类。比如不训练一个猫狗分类器，只写 prompts：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">a photo of a cat
+a photo of a dog</code></pre></figure>
+<p>然后看图片 embedding 更接近哪个文本 embedding。</p>
+<h2 id="clipcap-把-clip-图像表示变成语言模型-prefix">ClipCap：把 CLIP 图像表示变成语言模型 prefix</h2>
+<p>CLIP 解决的是“图和文是否对齐”。ClipCap 往前走了一步：既然 CLIP 的图像向量已经有很强的语义信息，那能不能把它变成语言模型的 prefix，让 GPT-2 这类 decoder 继续生成 caption？</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">image
+-&gt; CLIP image encoder
+-&gt; mapping network
+-&gt; prefix embeddings
+-&gt; GPT-2 / decoder LM
+-&gt; caption tokens</code></pre></figure>
+<p>这在现代 VLM 发展里很值得作为“奠基节点”理解。它不是今天最强的 VLM 架构，但它把两个关键思想连起来了：</p>
+<ol><li>CLIP 提供图文对齐过的视觉语义表示。</li><li>语言模型不需要从零学语言，只要学会如何接收视觉 prefix。</li></ol>
+<p>最小结构示意：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">import torch
+from torch import nn
+
+clip_image_embedding = clip_image_encoder(image)  # [batch, clip_dim]
+prefix = mapper(clip_image_embedding)             # [batch, prefix_len * lm_dim]
+prefix = prefix.view(batch, prefix_len, lm_dim)
+inputs_embeds = torch.cat([prefix, text_embeddings], dim=1)
+caption_logits = language_model(inputs_embeds=inputs_embeds)</code></pre></figure>
+<p>训练目标回到我们熟悉的 next-token prediction：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">输入: image + "a photo of"
+目标: "a dog running on the beach"
+loss: 逐 token cross entropy</code></pre></figure>
+<p>你说它是现代视觉语言模型的一个奠基技术，我会这样校准：</p>
+<ul><li>如果说最底层奠基，ViT 和 CLIP 更基础。</li><li>如果说“把 CLIP 视觉表示接到生成式语言模型上”，ClipCap 是非常关键、非常教学友好的早期方案。</li><li>如果说今天的通用 VLM，BLIP-2、Flamingo、LLaVA、Qwen-VL 这类模型在 ClipCap 的方向上继续发展：不只用一个全局 embedding，而是使用视觉 token、Q-Former、cross-attention 或 projector 来保留更多细节。</li></ul>
+<p>CoCa 可以作为旁支补充：它把 CLIP 风格的 contrastive loss 和 captioning loss 结合在同一个图文基础模型里。但本教程主线现在按 “ViT -&gt; CLIP -&gt; ClipCap -&gt; BLIP/LLaVA/Qwen-VL” 来讲。</p>
+<h2 id="blip-blip-2-用桥接模块降低训练成本">BLIP/BLIP-2：用桥接模块降低训练成本</h2>
+<p>端到端训练一个大视觉模型加大语言模型非常贵。BLIP-2 的思路是冻结已有 image encoder 和 LLM，中间训练一个轻量 Q-Former 来桥接视觉和语言。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">frozen image encoder
+-&gt; visual features
+-&gt; Q-Former queries
+-&gt; language model</code></pre></figure>
+<p>这给后来的多模态模型提供了一个常见模式：不要每次都从零训练所有模块，而是用一个相对小的连接器把强视觉 encoder 和强语言模型接起来。</p>
+<h2 id="llava-把视觉-token-投到-llm-的词向量空间">LLaVA：把视觉 token 投到 LLM 的词向量空间</h2>
+<p>LLaVA 风格的结构可以用一句话概括：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">CLIP ViT 提取视觉特征 -&gt; MLP projector -&gt; LLM embedding space -&gt; instruction tuning</code></pre></figure>
+<p>最小 projector 示意：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">from torch import nn
+
+projector = nn.Sequential(
+    nn.Linear(vision_dim, llm_dim),
+    nn.GELU(),
+    nn.Linear(llm_dim, llm_dim),
+)
+
+visual_tokens_for_llm = projector(clip_visual_tokens)</code></pre></figure>
+<p>这些 visual tokens 会被拼到文本 token 前后，LLM 在 causal attention 中一起处理。训练时通常分两步：</p>
+<ol><li>对齐阶段：让 projector 学会把视觉特征放进语言模型能理解的空间。</li><li>指令微调：用图文问答数据让模型学会按用户问题回答。</li></ol>
+<h2 id="现代-vlm-qwen3-vl-qwen3-5-omni-和动态多模态">现代 VLM：Qwen3-VL、Qwen3.5-Omni 和动态多模态</h2>
+<p>现代多模态模型不只看普通照片，还要看截图、表格、PDF、长图、视频和 UI。这里会出现几个新组件：</p>
+<ul><li>动态分辨率：不同大小图片变成不同数量视觉 token，避免统一 resize 损失细节。</li><li>Window Attention：高分辨率视觉 token 太多时，用局部窗口降低开销。</li><li>MRoPE：把 RoPE 扩展到文字、图像二维坐标、视频时间轴。</li><li>OCR/文档能力：模型需要保留局部细节和布局，而不是只提取全局语义。</li><li>grounding：输出 bounding box、point 或区域定位。</li></ul>
+<p>Qwen2.5-VL、Qwen3-VL、Qwen3.5-Omni 这类模型把这些问题系统化了：图片、视频、音频不再只是“一个额外输入”，而是带空间、时间、分辨率结构的 token 序列。</p>
+<p>可以按这个阶梯理解：</p>
+<div class="table-wrap"><table><thead><tr><th>阶段</th><th>代表模型</th><th>关键变化</th></tr></thead><tbody><tr><td>图文对齐</td><td>CLIP</td><td>图像和文字进入共享语义空间</td></tr>
+<tr><td>图生文</td><td>ClipCap</td><td>CLIP 图像 embedding 通过 mapper 变成 LM prefix</td></tr>
+<tr><td>视觉接入 LLM</td><td>BLIP-2、LLaVA</td><td>Q-Former 或 projector 把视觉 token 接到语言模型</td></tr>
+<tr><td>长上下文 VLM</td><td>Qwen3-VL</td><td>交错文本/图像/视频上下文、增强 MRoPE、DeepStack 多层视觉特征</td></tr>
+<tr><td>全模态交互</td><td>Qwen3.5-Omni</td><td>文本、视觉、音频、视频共同进入 omni 模型，支持更长音视频理解和语音交互</td></tr>
+<tr><td>具身动作</td><td>Qwen-VLA</td><td>在 VLM 之上接动作/轨迹生成，面向机器人操作、导航、轨迹预测</td></tr></tbody></table></div>
+<p>这里的重点不是背模型名，而是看能力边界如何移动：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">CLIP:    图文相似吗？
+ClipCap: 看图能说一句话吗？
+LLaVA:   看图能按指令回答吗？
+Qwen3-VL: 图、视频、长文档能混在一个上下文里推理吗？
+Qwen-VLA: 看见环境后能输出动作吗？</code></pre></figure>
+<h2 id="encoder-free-multimodal-google-gemma-4-这条新分支">Encoder-Free Multimodal：Google Gemma 4 这条新分支</h2>
+<p>大多数 VLM 都有单独视觉 encoder：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">image -&gt; vision encoder -&gt; connector -&gt; LLM</code></pre></figure>
+<p>Google 在 Gemma 4 12B 上公开强调了一条 encoder-free multimodal 路线：不再使用单独的多模态 encoder，视觉和音频输入直接进入 LLM backbone。这个方向的动机很清楚：减少外接模块和部署复杂度，让多模态能力更像语言模型的原生输入能力。</p>
+<p>教学上可以这样理解：</p>
+<div class="table-wrap"><table><thead><tr><th>传统 VLM</th><th>Encoder-free multimodal</th></tr></thead><tbody><tr><td>视觉 encoder 先提特征</td><td>输入侧直接把多模态表示送入 LLM backbone</td></tr>
+<tr><td>connector/projector 很关键</td><td>backbone 自身承担更多跨模态建模</td></tr>
+<tr><td>视觉能力受 vision tower 影响很大</td><td>训练配方和统一 backbone 更重要</td></tr></tbody></table></div>
+<p>这不代表视觉 encoder 路线马上过时。Qwen3-VL/Qwen3.5-Omni、PaliGemma、LLaVA 这些路线仍然非常重要。更准确的判断是：现代 VLM 正在从“外接视觉塔”分化出“原生多模态 backbone”和“VLA 动作模型”两条新方向。</p>
+<h2 id="看-vlm-代码时的五个问题">看 VLM 代码时的五个问题</h2>
+<ol><li>视觉 encoder 是 ViT、ConvNet，还是混合结构？</li><li>图片 token 如何进入语言模型：MLP projector、Q-Former、cross-attention、DeepStack，还是原生统一 backbone？</li><li>训练目标是什么：contrastive、ClipCap captioning、VQA、instruction tuning、OCR、grounding、action prediction？</li><li>位置信息如何表示：固定 resize 后的位置、dynamic resolution、MRoPE、absolute time encoding？</li><li>如果是 VLA，动作空间是什么：离散 action token、连续轨迹、还是 DiT/flow-matching action decoder？</li></ol>
+<h2 id="参考">参考</h2>
+<ul><li><a href="https://arxiv.org/abs/2010.11929">An Image is Worth 16x16 Words: Vision Transformer</a></li><li><a href="https://arxiv.org/abs/2103.00020">CLIP: Learning Transferable Visual Models From Natural Language Supervision</a></li><li><a href="https://arxiv.org/abs/2111.09734">ClipCap: CLIP Prefix for Image Captioning</a></li><li><a href="https://github.com/rmokady/CLIP_prefix_caption">Official ClipCap implementation</a></li><li><a href="https://arxiv.org/abs/2205.01917">CoCa: Contrastive Captioners are Image-Text Foundation Models</a></li><li><a href="https://arxiv.org/abs/2201.12086">BLIP</a></li><li><a href="https://arxiv.org/abs/2301.12597">BLIP-2</a></li><li><a href="https://arxiv.org/abs/2304.08485">LLaVA: Visual Instruction Tuning</a></li><li><a href="https://arxiv.org/abs/2409.12191">Qwen2-VL</a></li><li><a href="https://arxiv.org/abs/2502.13923">Qwen2.5-VL</a></li><li><a href="https://arxiv.org/abs/2511.21631">Qwen3-VL Technical Report</a></li><li><a href="https://arxiv.org/abs/2604.15804">Qwen3.5-Omni Technical Report</a></li><li><a href="https://arxiv.org/abs/2605.30280">Qwen-VLA Technical Report</a></li><li><a href="https://github.com/QwenLM/Qwen-VLA">Qwen-VLA official repository</a></li><li><a href="https://blog.google/innovation-and-ai/technology/developers-tools/introducing-gemma-4-12b/">Google Gemma 4 12B announcement</a></li><li><a href="https://cdn.openai.com/papers/GPTV_System_Card.pdf">GPT-4V System Card PDF</a></li></ul>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./21_modern_llm_components.html"><span>上一篇</span><strong>现代 LLM 组件：RoPE、GQA、MLA、稀疏注意力与 KV Cache</strong></a>
+        <a href="./23_diffusion_image_generation.html"><span>下一篇</span><strong>Diffusion 生图：从加噪去噪到 Stable Diffusion 和 DiT</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/22_multimodal_vit_clip_vlm.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

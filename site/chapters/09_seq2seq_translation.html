@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用一个不带 attention 的 Encoder-Decoder 翻译 toy 实验理解 BOS/EOS、teacher forcing、自回归解码和序列损失。" />
+    <title>09. Seq2Seq：从分类到生成 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/09_seq2seq_translation.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            视觉与序列 / Chapter 09
+          </p>
+          <h1>09. Seq2Seq：从分类到生成</h1>
+          <p class="article-summary">用一个不带 attention 的 Encoder-Decoder 翻译 toy 实验理解 BOS/EOS、teacher forcing、自回归解码和序列损失。</p>
+          <div class="article-tags"><span>Seq2Seq</span><span>translation</span><span>decoder</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#encoder-decoder">Encoder-Decoder</a>
+<a class="toc-level-2" href="#bos-eos-和-padding">BOS、EOS 和 padding</a>
+<a class="toc-level-2" href="#teacher-forcing">Teacher Forcing</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#怎么看结果">怎么看结果</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#和-attention-的关系">和 Attention 的关系</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：encoder-decoder、BOS/EOS、teacher forcing、自回归解码、序列级 cross entropy。</li><li>实验要验证：模型不再只输出一个类别，而是可以一步步生成一个目标序列。</li><li>实验不验证：它不是正式机器翻译评测，也不能代表真实语料上的翻译能力。</li><li>跑完重点看：source/target/prediction 三者是否对齐，EOS 是否正常结束，loss 是否按目标 token 计算。</li></ul>
+<p>前几章的序列模型做的是分类：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">输入序列 -&gt; 一个类别</code></pre></figure>
+<p>机器翻译不一样。它需要：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">输入序列 -&gt; 输出序列</code></pre></figure>
+<p>例如：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">"you are smart" -&gt; "tu es intelligent"</code></pre></figure>
+<p>这类任务叫 sequence-to-sequence，简称 Seq2Seq。</p>
+<h2 id="encoder-decoder">Encoder-Decoder</h2>
+<p>最经典的 Seq2Seq 结构分成两部分：</p>
+<ul><li>Encoder：读完整个输入序列，把它压成一个状态。</li><li>Decoder：从这个状态出发，一步步生成输出序列。</li></ul>
+<p>本章先实现一个不带 attention 的 GRU Encoder-Decoder。它的瓶颈很明显：encoder 必须把整句信息压进最后一个 hidden state。这个瓶颈是下一章 attention 的概念动机。</p>
+<p>实验使用的是人工构造、ASCII 化的 toy 句子。为了避免分词、重音和真实语料清洗把主线冲散，法语里的重音会被去掉，例如 <code>drole</code>、<code>prets</code>。它适合观察数据流，不代表真实翻译数据集。</p>
+<h2 id="bos-eos-和-padding">BOS、EOS 和 padding</h2>
+<p>生成任务需要告诉 decoder 什么时候开始、什么时候结束：</p>
+<ul><li><code>BOS</code>：beginning of sequence，输出序列开始。</li><li><code>EOS</code>：end of sequence，输出序列结束。</li><li><code>PAD</code>：把不同长度的句子补齐成同一个 batch。</li></ul>
+<p>目标句子 <code>tu es intelligent</code> 会被拆成两条序列：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">target_input:  &lt;bos&gt; tu es intelligent
+target_output: tu es intelligent &lt;eos&gt;</code></pre></figure>
+<p>训练时，decoder 看到 <code>target_input</code>，每个位置都要预测 <code>target_output</code> 的对应 token。</p>
+<p>把它展开成表格：</p>
+<div class="table-wrap"><table><thead><tr><th>decoder 当前看到</th><th>需要预测</th></tr></thead><tbody><tr><td><code>&lt;bos&gt;</code></td><td><code>tu</code></td></tr>
+<tr><td><code>tu</code></td><td><code>es</code></td></tr>
+<tr><td><code>es</code></td><td><code>intelligent</code></td></tr>
+<tr><td><code>intelligent</code></td><td><code>&lt;eos&gt;</code></td></tr></tbody></table></div>
+<p>这就是生成任务里的错位监督。第 13、14 章 GPT 也会做类似事情，只是 GPT 没有单独的 encoder，输入文本自己同时提供上下文和下一个 token 标签。</p>
+<p>这和 GPT 的 next-token prediction 已经很接近了。区别是：Seq2Seq decoder 还会接收 encoder 给出的源句信息。</p>
+<h2 id="teacher-forcing">Teacher Forcing</h2>
+<p>训练时我们把正确的前一个 token 喂给 decoder，这叫 teacher forcing。</p>
+<p>例如预测第二个法语 token 时，decoder 看到的是正确的 <code>tu</code>，而不是自己上一步预测出来的 token。</p>
+<p>这样训练更稳定。但推理时没有标准答案可喂，decoder 只能把自己上一步生成的 token 接着喂回去，这叫自回归解码。</p>
+<p>本章的 greedy decode 为了清晰，每生成一步都会重跑 encoder 和当前 decoder prefix。真实系统会缓存 encoder 状态和 decoder 状态，但那会让第一版代码更难读。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_seq2seq_translation --epochs 80</code></pre></figure>
+<p>快速 smoke test：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_seq2seq_translation --epochs 2</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">epoch=001 train_loss=... val_loss=...
+...
+translations
+src='you are smart' target='tu es intelligent' pred='...'</code></pre></figure>
+<p>跑完时不要只看 <code>pred</code> 是否完全等于 <code>target</code>。还要看两件事：它有没有生成 <code>&lt;eos&gt;</code> 后停止，常见词是否出现在合理位置。toy 数据很小，完全正确和完全错乱之间会有很多中间状态。</p>
+<h2 id="怎么看结果">怎么看结果</h2>
+<p>你可能会看到训练 loss 持续下降，但验证 loss 不一定下降，测试翻译也可能不准确。这不是坏事，它暴露了本章 toy 设置的多个限制：</p>
+<ul><li>数据很小，容易记住训练样本。</li><li>验证/测试只是见过词的重组，不是严格真实翻译评估。</li><li>不带 attention 的 encoder 必须把整句压成一个向量，这是 attention 的概念动机，不是本 toy 实验单独证明出的结论。</li><li>decoder 推理时只能依赖自己前面生成的 token，错误会累积。</li></ul>
+<p>下一章加入 attention 后，decoder 不必只依赖一个固定向量，而是可以在生成每个 token 时回看 encoder 的不同位置。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>Seq2Seq 把“一个输入对应一个标签”扩展成“一个输入序列对应一个输出序列”。</li><li>BOS/EOS 让生成过程有明确开始和结束。</li><li>Teacher forcing 让训练阶段更稳定。</li><li>序列损失本质上还是 cross entropy，只是每个目标 token 都要算一次。</li></ul>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它不能证明这个 toy 模型有真实翻译能力。</li><li>它不能证明训练 loss 低就代表生成质量好。</li><li>它不能解决长句翻译和复杂对齐问题。</li></ul>
+<h2 id="和-attention-的关系">和 Attention 的关系</h2>
+<p>本章 decoder 只拿到 encoder 最后的 hidden state。所有源句信息都挤在一个向量里。</p>
+<p>Attention 的想法是：decoder 每生成一个 token，都可以根据当前需要去看 encoder 的所有输出位置。这样模型不必把整句一次性压进一个固定向量。</p>
+<p>上一章：<a href="./08_lstm_gru.html">08. LSTM 和 GRU：门控记忆</a> 下一章：<a href="./10_attention_seq2seq.html">10. Attention：让 decoder 不只看一个向量</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./08_lstm_gru.html"><span>上一篇</span><strong>LSTM 和 GRU：门控记忆</strong></a>
+        <a href="./10_attention_seq2seq.html"><span>下一篇</span><strong>Attention：让 decoder 不只看一个向量</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/09_seq2seq_translation.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="把 mini-GPT 预训练、loss 检查、SFT、PPO、DPO、GRPO 串成一条可运行的学习流水线。" />
+    <title>20. Capstone：Mini LLM Pipeline | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/20_capstone_mini_llm_pipeline.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Post-training / Chapter 20
+          </p>
+          <h1>20. Capstone：Mini LLM Pipeline</h1>
+          <p class="article-summary">把 mini-GPT 预训练、loss 检查、SFT、PPO、DPO、GRPO 串成一条可运行的学习流水线。</p>
+          <div class="article-tags"><span>capstone</span><span>pipeline</span><span>LLM</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#预览-pipeline">预览 Pipeline</a>
+<a class="toc-level-2" href="#执行短版-pipeline">执行短版 Pipeline</a>
+<a class="toc-level-2" href="#每个阶段在检查什么">每个阶段在检查什么</a>
+<a class="toc-level-2" href="#这条流水线不能代表什么">这条流水线不能代表什么</a>
+<a class="toc-level-2" href="#回到主线">回到主线</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：把预训练、生成检查、loss 显微镜、SFT、PPO、DPO、GRPO 放到同一张学习地图里。</li><li>实验要验证：这些章节虽然代码抽象层级不同，但都在重复“数据 -&gt; 目标 -&gt; loss/奖励 -&gt; 更新 -&gt; 检查”的训练闭环。</li><li>实验不验证：它不是同一个大模型 checkpoint 从预训练连续训练到 post-training 的生产流水线。</li><li>跑完重点看：每个阶段的命令是否可执行，哪些阶段共享 mini-GPT checkpoint，哪些阶段只是教学版 bandit policy。</li></ul>
+<p>这一章不引入新算法，而是把前面几个阶段串起来。</p>
+<p>完整大模型训练流水线可能非常复杂，但它的学习骨架可以先压缩成：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">预训练 -&gt; 生成检查 -&gt; loss 检查 -&gt; SFT -&gt; PPO -&gt; DPO -&gt; GRPO</code></pre></figure>
+<p>本项目的 Capstone 用 tiny 脚本做这件事。它不是生产训练框架，而是一张可以运行的路线图。</p>
+<p>这里的“串起来”指的是统一训练目标视角的学习 pipeline，不是同一个 checkpoint 从预训练一路继续进入 SFT、PPO、DPO、GRPO 的生产流水线。当前代码里只有 <code>pretrain</code> 和 <code>generate</code> 共享 mini-GPT checkpoint；SFT 会重新初始化一个 tiny mini-GPT；PPO、DPO、GRPO 使用独立的 bandit policy 来讲清各自的优化目标。</p>
+<p>真实项目里，PPO、DPO、GRPO 经常是不同对齐路线或不同任务阶段的选择，不一定全部依次执行一遍。本章把它们放在一起，是为了让你比较“训练信号如何变化”，不是暗示生产训练必须按这个顺序全做。</p>
+<h2 id="预览-pipeline">预览 Pipeline</h2>
+<p>默认 dry-run，只打印每个阶段要执行的命令：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.run_capstone_pipeline</code></pre></figure>
+<p>你会看到：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">capstone_mode=dry-run stages=7
+
+[01] pretrain
+goal=训练一个 tiny causal LM，并保存 checkpoint。
+command=...</code></pre></figure>
+<h2 id="执行短版-pipeline">执行短版 Pipeline</h2>
+<p>真正执行：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.run_capstone_pipeline --execute</code></pre></figure>
+<p>脚本会用临时目录保存 mini-GPT checkpoint，执行完自动清理。</p>
+<p>如果你希望保留 checkpoint，可以显式传入路径：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.run_capstone_pipeline \
+  --execute \
+  --checkpoint-path checkpoints/capstone_mini_gpt.pt</code></pre></figure>
+<p>不传 <code>--checkpoint-path</code> 时，<code>--execute</code> 使用临时路径并自动清理；传入后会写入你指定的位置。</p>
+<p>如果希望整条 Capstone 留下可审计产物，使用 <code>--output-dir</code>：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.run_capstone_pipeline \
+  --execute \
+  --output-dir runs/capstone-smoke</code></pre></figure>
+<p>这时 mini-GPT checkpoint 会保存在 <code>runs/capstone-smoke/capstone_mini_gpt.pt</code>，每个支持保存的子阶段会获得自己的子目录，例如 <code>01_pretrain/</code>、<code>02_generate/</code>、<code>04_sft/</code>、<code>05_ppo/</code>。父目录的 <code>summary.json</code> 会记录每个阶段的命令、目标和退出码。</p>
+<h2 id="每个阶段在检查什么">每个阶段在检查什么</h2>
+<div class="table-wrap"><table><thead><tr><th>阶段</th><th>数据</th><th>目标</th><th>loss / 优化信号</th><th>教学实现</th></tr></thead><tbody><tr><td>pretrain</td><td>普通文本</td><td>下一个 token</td><td>causal LM cross entropy</td><td>mini-GPT checkpoint</td></tr>
+<tr><td>generate</td><td>prompt</td><td>采样后续 token</td><td>temperature / top-k / top-p</td><td>读取 mini-GPT checkpoint</td></tr>
+<tr><td>inspect-loss</td><td>短文本</td><td>手动检查 <code>x/y</code></td><td>逐 token cross entropy</td><td>独立 loss 显微镜</td></tr>
+<tr><td>SFT</td><td>instruction/response</td><td>response token</td><td>masked next-token loss</td><td>独立 tiny SFT</td></tr>
+<tr><td>PPO</td><td>prompt/action/reward</td><td>提高高 reward action</td><td>clipped policy objective</td><td>bandit policy</td></tr>
+<tr><td>DPO</td><td>chosen/rejected</td><td>偏向 chosen</td><td>preference log-ratio loss</td><td>preference bandit</td></tr>
+<tr><td>GRPO</td><td>group samples/reward</td><td>组内相对优势</td><td>relative advantage policy loss</td><td>group bandit</td></tr></tbody></table></div>
+<p>可以把这张表再压缩成一条主线：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">预训练/SFT：答案来自文本 label
+PPO/GRPO：答案好坏来自采样后的 reward
+DPO：答案好坏来自 chosen/rejected 偏好对</code></pre></figure>
+<p>所有方法都在更新模型参数，但“什么算好答案”的定义不同。</p>
+<h2 id="这条流水线不能代表什么">这条流水线不能代表什么</h2>
+<p>它不是生产级 LLM 训练系统：</p>
+<ul><li>没有大语料清洗；</li><li>没有 BPE tokenizer；</li><li>没有分布式训练；</li><li>没有大模型 checkpoint 管理；</li><li>没有真实 reward model；</li><li>没有系统评测集。</li><li>没有同一模型的连续 post-training；</li><li>没有真实偏好数据管线；</li><li>没有 value model；</li><li>没有评测回归门禁。</li></ul>
+<p>它真正想证明的是：LLM 的几个训练阶段可以用统一语言理解。</p>
+<h2 id="回到主线">回到主线</h2>
+<p>从第 1 章到第 20 章，我们一直在重复同一个基本动作：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">准备数据 -&gt; 前向传播 -&gt; 构造训练目标 -&gt; 计算 loss -&gt; 反向传播 -&gt; 更新参数 -&gt; 检查结果</code></pre></figure>
+<p>差别在于训练目标越来越复杂：</p>
+<ul><li>分类任务：预测标签；</li><li>语言模型：预测下一个 token；</li><li>SFT：只让 response token 贡献 loss；</li><li>PPO：用 reward 和 clipping 更新 policy；</li><li>DPO：直接利用 chosen/rejected 偏好；</li><li>GRPO：用组内相对 reward 代替 value model。</li></ul>
+<p>这就是本教程的最终地基。</p>
+<p>上一章：<a href="./19_grpo_verifiable_tasks.html">19. GRPO：面向可验证任务的组内相对优化</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./19_grpo_verifiable_tasks.html"><span>上一篇</span><strong>GRPO：面向可验证任务的组内相对优化</strong></a>
+        <a href="./21_modern_llm_components.html"><span>下一篇</span><strong>现代 LLM 组件：RoPE、GQA、MLA、稀疏注意力与 KV Cache</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/20_capstone_mini_llm_pipeline.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

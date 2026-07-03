@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用 tiny instruction 数据演示 SFT：prompt/response 模板、response-only label mask，以及为什么 SFT 仍然是 next-token loss。" />
+    <title>16. SFT：让模型学会按指令回答 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/16_sft_instruction_tuning.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Post-training / Chapter 16
+          </p>
+          <h1>16. SFT：让模型学会按指令回答</h1>
+          <p class="article-summary">用 tiny instruction 数据演示 SFT：prompt/response 模板、response-only label mask，以及为什么 SFT 仍然是 next-token loss。</p>
+          <div class="article-tags"><span>SFT</span><span>instruction</span><span>mask</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#instruction-response-格式">Instruction / Response 格式</a>
+<a class="toc-level-2" href="#为什么要-mask-prompt">为什么要 Mask Prompt</a>
+<a class="toc-level-2" href="#和预训练的关系">和预训练的关系</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#常见误解">常见误解</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：instruction/response 模板、response-only label mask、监督微调。</li><li>实验要验证：SFT 仍然是 causal LM loss，只是通常只让回答部分 token 贡献 loss。</li><li>实验不验证：它不是 RLHF，也不能把 tiny 数据集微调成真正可靠的助手。</li><li>跑完重点看：prompt token 的 label 是否被 mask，response token 是否参与 loss，生成格式是否更接近训练样例。</li></ul>
+<p>SFT 是 supervised fine-tuning，通常翻译成监督微调。它的目标不是改变 GPT 的基本结构，而是让模型看到“指令 -&gt; 回答”的样例，从而学会按这种格式输出。</p>
+<p>这一章的重点是一个容易被讲玄的事实：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">SFT 仍然是 next-token prediction。</code></pre></figure>
+<p>区别主要在数据格式和 label mask。</p>
+<h2 id="instruction-response-格式">Instruction / Response 格式</h2>
+<p>本章使用最小 instruction 模板：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Instruction: repeat: hi
+Response: hi</code></pre></figure>
+<p>真实 ChatGPT 风格模型会有更复杂的 chat template，例如 system/user/assistant 多轮消息。本章不用多轮格式，是为了把 mask 和 loss 看清楚；本质上，它们最后仍然会被 tokenizer 转成一条 token 序列。</p>
+<h2 id="为什么要-mask-prompt">为什么要 Mask Prompt</h2>
+<p>如果把整条序列都作为 loss，模型会同时学习：</p>
+<ul><li>复述 prompt；</li><li>生成 response。</li></ul>
+<p>但 SFT 更关心“看到 prompt 后生成 response”。因此常见做法是把 prompt 部分的 label 设成 <code>ignore_index</code>，只让 response token 贡献 loss。</p>
+<p>在 PyTorch 里，本章使用：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">IGNORE_INDEX = -100
+F.cross_entropy(..., ignore_index=IGNORE_INDEX)</code></pre></figure>
+<p>例如：</p>
+<div class="table-wrap"><table><thead><tr><th>位置含义</th><th>input token</th><th>target token</th><th>计入 loss</th></tr></thead><tbody><tr><td>prompt 内部</td><td><code>Instruction...</code></td><td>prompt 的下一个 token</td><td>否，label 是 <code>-100</code></td></tr>
+<tr><td>prompt 末尾</td><td><code>Response: </code> 的最后一个 token</td><td>response 第一个 token，比如 <code>h</code></td><td>是</td></tr>
+<tr><td>response 内部</td><td><code>h</code></td><td><code>i</code></td><td>是</td></tr>
+<tr><td>response 结尾</td><td><code>i</code></td><td>换行符</td><td>是</td></tr></tbody></table></div>
+<p>prompt token 仍然会作为输入上下文被模型看到，但它们对应位置不计入 loss。</p>
+<p>这是 SFT 里最容易误会的地方：mask prompt 不等于模型看不到 prompt。前向传播时，prompt token 仍然进入 embedding、attention 和 hidden state；只是计算 cross entropy 时，这些位置的 label 被设为 <code>-100</code>，不产生 loss。</p>
+<p>所以模型是在“看着 prompt 生成 response”的条件下学习，而不是闭着眼只背 response。</p>
+<h2 id="和预训练的关系">和预训练的关系</h2>
+<p>预训练数据通常是普通文本：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">the model reads tokens one by one</code></pre></figure>
+<p>SFT 数据通常是结构化对话或指令：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Instruction: ...
+Response: ...</code></pre></figure>
+<p>两者的模型结构和 loss 类型一样，都是 causal LM cross entropy。SFT 只是把监督信号集中到回答部分。</p>
+<p>从数据分布角度看，SFT 能让模型更像助手，不是因为 loss 变神奇了，而是因为它反复看到：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Instruction: ...
+Response: ...</code></pre></figure>
+<p>并且主要在 <code>Response</code> 部分被纠正。模型因此学到“看到这种指令格式后，后面应该接一个回答”。</p>
+<p>生产 SFT 还会处理更多细节，例如明确 pad token、attention mask、多轮 chat template、样本打包、长度截断和质量过滤。本章先保留最小版本，把 response-only loss 讲清楚。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_sft --epochs 30</code></pre></figure>
+<p>smoke 版会更短：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_sft \
+  --epochs 2 \
+  --batch-size 3 \
+  --embed-dim 32 \
+  --num-layers 1</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">vocab_size=23 examples=6
+epoch=001 sft_loss=...
+epoch=002 sft_loss=...
+
+generation
+Instruction: repeat: hi
+Response: ...</code></pre></figure>
+<p>因为数据极小，生成质量不是重点。重点是：</p>
+<ul><li><code>SFTDataset</code> 如何格式化 prompt/response；</li><li>prompt 部分 label 如何变成 <code>-100</code>；</li><li><code>sft_cross_entropy</code> 如何跳过这些位置；</li><li>训练循环仍然是 forward、loss、backward、optimizer step。</li></ul>
+<h2 id="常见误解">常见误解</h2>
+<p>SFT 不是 RLHF。SFT 没有 reward model，也没有 PPO/DPO/GRPO 的偏好优化目标。</p>
+<p>SFT 也不是“教模型事实”的万能方式。它更常用于教模型遵循格式、语气、任务分布和回答习惯。</p>
+<h2 id="下一步">下一步</h2>
+<p>下一章进入 PPO。我们会从 policy、reward、KL penalty 和 clipping 开始，做一个最小可运行的 RLHF 优化器实验。</p>
+<p>上一章：<a href="./15_mini_gpt_pretraining.html">15. 小型 GPT 预训练工程化</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./15_mini_gpt_pretraining.html"><span>上一篇</span><strong>小型 GPT 预训练工程化</strong></a>
+        <a href="./17_ppo_rlhf.html"><span>下一篇</span><strong>PPO：经典 RLHF 的核心优化器</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/16_sft_instruction_tuning.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

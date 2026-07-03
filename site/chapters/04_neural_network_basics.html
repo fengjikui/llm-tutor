@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="理解多层线性变换、非线性激活和表示学习如何组成最小神经网络。" />
+    <title>04. 神经网络基础：从线性模型到多层非线性函数 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/04_neural_network_basics.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            最小地基 / Chapter 04
+          </p>
+          <h1>04. 神经网络基础：从线性模型到多层非线性函数</h1>
+          <p class="article-summary">理解多层线性变换、非线性激活和表示学习如何组成最小神经网络。</p>
+          <div class="article-tags"><span>NN</span><span>ReLU</span><span>表示学习</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#为什么只堆线性层没有意义">为什么只堆线性层没有意义</a>
+<a class="toc-level-2" href="#神经网络为什么能起作用">神经网络为什么能起作用</a>
+<a class="toc-level-2" href="#本章模型">本章模型</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这一章要留下的直觉">这一章要留下的直觉</a>
+<a class="toc-level-2" href="#同一个闭环在-gpt-里长什么样">同一个闭环在 GPT 里长什么样</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#常见失败">常见失败</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：隐藏层、非线性激活、模型容量、从线性函数到多层函数。</li><li>实验要验证：加入隐藏层和激活函数后，模型可以拟合线性模型难以表达的模式。</li><li>实验不验证：它不证明“神经网络越深越好”，也不要求你马上掌握复杂网络设计。</li><li>跑完重点看：训练/验证 loss 的变化，测试指标，以及隐藏层规模改变后是否更容易过拟合或欠拟合。</li></ul>
+<p>线性模型只能表达一种形式：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x @ W + b</code></pre></figure>
+<p>如果数据规律本身比较复杂，单层线性变换就不够了。神经网络的基本想法是：把多个可学习变换和非线性函数组合起来。</p>
+<h2 id="为什么只堆线性层没有意义">为什么只堆线性层没有意义</h2>
+<p>如果没有激活函数：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Linear -&gt; Linear -&gt; Linear</code></pre></figure>
+<p>无论堆多少层，整体仍然等价于一个更大的线性变换。它不会获得真正新的表达能力。</p>
+<p>用一个省略 bias 的小公式看会更直观：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">(x @ W1) @ W2 = x @ (W1 @ W2)</code></pre></figure>
+<p>右边仍然只是一次线性变换。加上 bias 后，多个线性层也仍然可以合并成一个线性层。因此，真正让神经网络“弯起来”的不是层数本身，而是层与层之间的非线性。</p>
+<p>所以神经网络中间需要非线性激活，例如 ReLU：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Linear -&gt; ReLU -&gt; Linear -&gt; ReLU -&gt; Linear</code></pre></figure>
+<p>ReLU 的形式很简单：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">ReLU(x) = max(0, x)</code></pre></figure>
+<p>它让模型可以组合出分段非线性的决策边界。</p>
+<h2 id="神经网络为什么能起作用">神经网络为什么能起作用</h2>
+<p>可以从三个层面理解：</p>
+<ol><li>每一层把输入变成一种新的表示。</li><li>非线性激活让多层组合不再退化成一个线性模型。</li><li>反向传播和优化器会根据 loss 调整所有层的参数。</li></ol>
+<p>模型并不是被人手写规则，而是在训练过程中自己找到一组参数，让输入经过层层变换后更容易被分类。</p>
+<p>这里的“表示”不是玄学。假设输入是 30 个表格特征，第一层输出 64 维，那么某个样本会经历：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">raw features [30]
+-&gt; hidden activation [64]
+-&gt; hidden activation [64]
+-&gt; logits [2]</code></pre></figure>
+<p>中间的 <code>[64]</code> 就是一组新特征。它们不一定对应人类能命名的概念，但后面的层会用它们继续做判断。</p>
+<h2 id="本章模型">本章模型</h2>
+<p>代码在 <code>src/llm_tutor/models/feedforward.py</code>：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">输入特征
+-&gt; Linear
+-&gt; ReLU
+-&gt; Linear
+-&gt; ReLU
+-&gt; Linear
+-&gt; 类别 logits</code></pre></figure>
+<p>这个模型仍然很小，但已经包含神经网络最重要的几个组件：层、激活和输出 logits。Dropout、weight decay 这类正则化技巧会放到下一章单独讲。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_neural_network_basics --epochs 30</code></pre></figure>
+<p>可以和第一章线性分类器对比：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_linear_classifier --epochs 30</code></pre></figure>
+<p>观察两者在验证集和测试集上的表现。不要只看最终 accuracy，也要看 loss 曲线是否稳定、是否过拟合。</p>
+<p>如果你想更明显地观察模型容量，可以调小或调大隐藏层：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_neural_network_basics \
+  --epochs 30 \
+  --hidden-size 16</code></pre></figure>
+<p>隐藏层更大不一定更好。它只是给模型更多表达空间，也更需要验证集来提醒我们是否过拟合。</p>
+<p>样例输出大致会长这样：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">epoch=01 train_loss=... val_loss=... val_acc=... val_f1=...
+...
+test loss=... acc=... malignant_precision=... malignant_recall=... malignant_f1=...</code></pre></figure>
+<p>在这个小表格数据集上，神经网络不一定显著超过线性模型。这是正常现象：数据本身可能已经接近线性可分，模型更复杂不等于一定更好。</p>
+<h2 id="这一章要留下的直觉">这一章要留下的直觉</h2>
+<p>神经网络不是一团神秘公式。它仍然是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">前向传播 -&gt; 损失函数 -&gt; 反向传播 -&gt; 参数更新</code></pre></figure>
+<p>只是模型从单层线性函数，变成了多层非线性函数。后面的 CNN、RNN、Transformer，本质上也都遵循这个训练闭环，只是结构中加入了更适合图像、序列或文本生成的归纳偏置。</p>
+<h2 id="同一个闭环在-gpt-里长什么样">同一个闭环在 GPT 里长什么样</h2>
+<p>现在的分类模型是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x [batch, features]
+-&gt; logits [batch, classes]
+-&gt; labels [batch]
+-&gt; cross entropy loss</code></pre></figure>
+<p>GPT 训练时会变成：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">input_ids [batch, seq_len]
+-&gt; logits [batch, seq_len, vocab_size]
+-&gt; labels [batch, seq_len]
+-&gt; cross entropy loss</code></pre></figure>
+<p>区别看起来很大，但训练动作仍然是同一套：前向传播、计算 loss、反向传播、更新参数。后面所有复杂结构都不会改变这个核心。</p>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它不能证明神经网络总比线性模型强。</li><li>它不能证明层数越多越好。</li><li>它不能证明模型学到了人能理解的医学规则。</li></ul>
+<h2 id="常见失败">常见失败</h2>
+<ul><li>训练 loss 下降很慢：可以适当增大学习率，或检查输入是否标准化。</li><li>训练集很好、验证集变差：可能是模型过拟合，下一章会讲正则化。</li><li>神经网络没超过线性模型：这不是 bug，小数据集上常常如此。</li></ul>
+<p>上一章：<a href="./03_pytorch_training_loop.html">03. PyTorch 快速生存指南</a> 下一章：<a href="./05_training_neural_networks.html">05. 训练神经网络的基本功</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./03_pytorch_training_loop.html"><span>上一篇</span><strong>PyTorch 快速生存指南</strong></a>
+        <a href="./05_training_neural_networks.html"><span>下一篇</span><strong>训练神经网络的基本功</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/04_neural_network_basics.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

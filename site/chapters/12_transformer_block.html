@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="实现一个 Pre-LN Transformer block，理解 residual、LayerNorm、MLP 和 causal self-attention 如何组成 GPT 的基本积木。" />
+    <title>12. Transformer Block：把 Self-Attention 组装起来 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/12_transformer_block.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Transformer / Chapter 12
+          </p>
+          <h1>12. Transformer Block：把 Self-Attention 组装起来</h1>
+          <p class="article-summary">实现一个 Pre-LN Transformer block，理解 residual、LayerNorm、MLP 和 causal self-attention 如何组成 GPT 的基本积木。</p>
+          <div class="article-tags"><span>Transformer</span><span>LayerNorm</span><span>MLP</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#residual-connection">Residual Connection</a>
+<a class="toc-level-2" href="#layernorm">LayerNorm</a>
+<a class="toc-level-2" href="#mlp">MLP</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：residual connection、LayerNorm、MLP/feed-forward、Pre-LN Transformer block。</li><li>实验要验证：self-attention 可以和残差、归一化、MLP 组合成 GPT 的基本积木，并保持输入输出 shape 一致。</li><li>实验不验证：它还不是完整 GPT，也没有开始大规模预训练。</li><li>跑完重点看：block 输入输出 shape、attention 权重 shape、<code>future_weight_sum=0.0000</code> 是否说明 causal mask 生效。</li></ul>
+<p>上一章我们只实现了 self-attention。完整 Transformer block 还需要几个关键组件：</p>
+<ul><li>residual connection；</li><li>LayerNorm；</li><li>MLP / feed-forward network；</li><li>attention mask。</li></ul>
+<p>这一章实现一个 pre-LN Transformer block。它的结构是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x
+-&gt; LayerNorm
+-&gt; Multi-Head Self-Attention
+-&gt; residual add
+-&gt; LayerNorm
+-&gt; MLP
+-&gt; residual add</code></pre></figure>
+<p>输出 shape 和输入保持一致：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, seq_len, embed_dim] -&gt; [batch, seq_len, embed_dim]</code></pre></figure>
+<p>这就是它可以被堆很多层的原因。</p>
+<h2 id="residual-connection">Residual Connection</h2>
+<p>Residual connection 会把模块输出加回原输入：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x = x + module(x)</code></pre></figure>
+<p>这样做有两个好处：</p>
+<ul><li>信息可以绕过某一层直接传下去；</li><li>梯度更容易穿过很多层。</li></ul>
+<p>深层 Transformer 如果没有 residual，很难稳定训练。</p>
+<h2 id="layernorm">LayerNorm</h2>
+<p>LayerNorm 会对每个 token 的隐藏向量做归一化。它让不同层之间的数值尺度更稳定。</p>
+<p>本章用的是 pre-LN：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">h = x + Attention(LayerNorm(x))
+y = h + MLP(LayerNorm(h))</code></pre></figure>
+<p>现代 decoder-only LLM 常见这种结构，因为它对深层网络训练更友好。</p>
+<h2 id="mlp">MLP</h2>
+<p>Attention 负责 token 之间的信息交换。MLP 负责对每个 token 的表示做非线性变换。</p>
+<p>常见结构：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Linear(embed_dim -&gt; 4 * embed_dim)
+GELU
+Linear(4 * embed_dim -&gt; embed_dim)</code></pre></figure>
+<p>注意：MLP 不混合不同 token，它是逐 token 工作的。token 间交互主要发生在 self-attention 里。</p>
+<p>可以把一个 block 粗略分工成：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">self-attention: 我应该从其他 token 取回什么信息？
+MLP: 拿到上下文后的这个 token 表示，应该如何进一步加工？</code></pre></figure>
+<p>如果只有 attention，没有 MLP，模型仍然能路由信息，但每个 token 位置上的非线性变换能力会弱很多。真实 Transformer 里，MLP 往往占用大量参数，是表达能力的重要来源。</p>
+<p>本章的 block 是 GPT 风格的 masked self-attention block。它不是原始 Transformer decoder 的完整结构，因为原始 decoder 还会有一层 encoder-decoder cross-attention；GPT 不需要那一层。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.inspect_transformer_block</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x_shape=(2, 5, 16)
+output_shape=(2, 5, 16)
+attention_shape=(2, 4, 5, 5)
+block_shape_preserved=True
+future_weight_sum=0.0000</code></pre></figure>
+<p><code>future_weight_sum=0.0000</code> 表示 causal mask 生效，attention 没有把权重放到未来 token 上。注意，<code>TransformerBlock</code> 本身不自动创建 causal mask；本章实验是从外部传入 mask。下一章 mini-GPT 的 <code>forward</code> 会负责创建并传入这个 mask。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>Transformer block 的输入输出 shape 保持一致。</li><li>Residual connection 让 block 可以堆叠。</li><li>LayerNorm 稳定每层输入。</li><li>MLP 提供逐 token 的非线性变换。</li><li>Causal self-attention 是 GPT decoder block 的核心组件。</li></ul>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它还不是完整 GPT。</li><li>它没有 token embedding 和位置信息。</li><li>它没有训练语言模型，只检查 block 结构和 mask 行为。</li></ul>
+<h2 id="下一步">下一步</h2>
+<p>下一章会把多个 Transformer block 堆起来，加入 token embedding、position embedding 和语言模型头，开始实现 mini-GPT。</p>
+<p>上一章：<a href="./11_self_attention_from_scratch.html">11. Self-Attention 从零实现</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./11_self_attention_from_scratch.html"><span>上一篇</span><strong>Self-Attention 从零实现</strong></a>
+        <a href="./13_gpt_from_scratch.html"><span>下一篇</span><strong>GPT 从零实现：decoder-only 语言模型</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/12_transformer_block.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="用 chosen/rejected 偏好对实现 DPO loss，理解 policy/reference log-ratio 如何替代 PPO 的在线 reward 优化。" />
+    <title>18. DPO：直接偏好优化 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/18_dpo_preference_optimization.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Post-training / Chapter 18
+          </p>
+          <h1>18. DPO：直接偏好优化</h1>
+          <p class="article-summary">用 chosen/rejected 偏好对实现 DPO loss，理解 policy/reference log-ratio 如何替代 PPO 的在线 reward 优化。</p>
+          <div class="article-tags"><span>DPO</span><span>preference</span><span>KL</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#chosen-rejected">Chosen / Rejected</a>
+<a class="toc-level-2" href="#reference-model">Reference Model</a>
+<a class="toc-level-2" href="#dpo-loss">DPO Loss</a>
+<a class="toc-level-2" href="#一个-sanity-check">一个 Sanity Check</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#和-ppo-的区别">和 PPO 的区别</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：chosen/rejected、reference policy、log-ratio、DPO loss。</li><li>实验要验证：不用在线采样 reward，也可以直接从偏好对里学习“更偏向 chosen”。</li><li>实验不验证：它不是完整偏好数据训练流程，也没有对长回答 token log probability 求和。</li><li>跑完重点看：<code>pref_acc</code> 是否提高，policy 相对 reference 是否更偏 chosen，loss 是否随训练下降。</li></ul>
+<p>DPO 是 Direct Preference Optimization。它常被看作 PPO 式 RLHF 的一个更简单替代方案。</p>
+<p>PPO 的流程是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">policy 采样回答 -&gt; reward model 打分 -&gt; PPO 更新</code></pre></figure>
+<p>DPO 直接使用偏好对：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">prompt, chosen response, rejected response</code></pre></figure>
+<p>它不需要在训练时在线采样，也不需要显式训练一个 reward model。</p>
+<h2 id="chosen-rejected">Chosen / Rejected</h2>
+<p>本章仍然使用 bandit 版小实验。每个 prompt 有一个 chosen action 和一个 rejected action：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">prompt='say yes' chosen='yes' rejected='no'
+prompt='say no'  chosen='no'  rejected='yes'
+prompt='say ok'  chosen='ok'  rejected='yes'</code></pre></figure>
+<p>真实 DPO 中，chosen/rejected 通常是两段回答文本。模型会在 prompt 条件下，对 response token 的 log probability 求和；prompt token 不计入 chosen/rejected 分数。这个点和第 16 章 SFT 的 response-only label mask 是同一个方向：我们关心回答部分。</p>
+<h2 id="reference-model">Reference Model</h2>
+<p>DPO 需要一个 reference policy。它通常来自 SFT 后的模型拷贝，并在 DPO 训练中冻结。</p>
+<p>本章代码里：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">policy:    会被训练
+reference: 初始等于 policy，但冻结</code></pre></figure>
+<p>这样可以约束 policy 不要无限偏离原模型。</p>
+<p>真实大模型训练里，reference 通常会切到 <code>eval()</code> 并保持冻结。本章的 <code>TinyPromptPolicy</code> 没有 dropout，所以只需要冻结参数即可。</p>
+<h2 id="dpo-loss">DPO Loss</h2>
+<p>先计算 policy 对 chosen 和 rejected 的 log probability 差：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">policy_log_ratio = log pi(chosen | prompt) - log pi(rejected | prompt)</code></pre></figure>
+<p>再计算 reference 的同样差值：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">reference_log_ratio = log ref(chosen | prompt) - log ref(rejected | prompt)</code></pre></figure>
+<p>DPO 的核心 logit 是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">z = beta * (policy_log_ratio - reference_log_ratio)</code></pre></figure>
+<p>loss 是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">loss = -log sigmoid(z)</code></pre></figure>
+<p>如果 policy 相比 reference 更偏向 chosen，<code>z</code> 会变大，loss 会变小。</p>
+<h2 id="一个-sanity-check">一个 Sanity Check</h2>
+<p>如果 policy 和 reference 完全一样：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">policy_log_ratio == reference_log_ratio
+z = 0
+loss = -log sigmoid(0) = log(2)</code></pre></figure>
+<p>本章测试会专门检查这个性质。它是 DPO 实现是否靠谱的一个很好的信号。</p>
+<p>实验输出里的 <code>pref_acc</code> 表示 <code>policy_log_ratio &gt; reference_log_ratio</code> 的比例。它不是“chosen 概率绝对大于 rejected 概率”的准确率，而是“policy 相比 reference 更偏向 chosen”的比例；如果二者完全打平，tie 不算正确。</p>
+<p>举个数值例子：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">reference: logp(chosen)=-4, logp(rejected)=-2, reference_log_ratio=-2
+policy:    logp(chosen)=-3, logp(rejected)=-2, policy_log_ratio=-1</code></pre></figure>
+<p>policy 里 chosen 的绝对概率仍然可能低于 rejected，但它已经比 reference 更偏向 chosen 了，所以 DPO 的方向是正确的。DPO 不是把偏好对当普通二分类标签，而是在比较 policy 相对 reference 的偏好变化。</p>
+<p>DPO 不显式训练 reward model，不等于没有“奖励”概念。它把人类或规则给出的 chosen/rejected 偏好，隐式转成一个优化信号。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_dpo_bandit --epochs 40</code></pre></figure>
+<p>smoke 版：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_dpo_bandit --epochs 3</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">preferences=3 actions=3
+epoch=001 dpo_loss=0.6931 pref_acc=0.000 logit_mean=+0.0000
+epoch=003 dpo_loss=...
+
+policy
+prompt='say yes' action='yes' chosen='yes' rejected='no'
+...</code></pre></figure>
+<h2 id="和-ppo-的区别">和 PPO 的区别</h2>
+<p>PPO 更像在线强化学习：</p>
+<ul><li>policy 采样；</li><li>reward 打分；</li><li>用 ratio、advantage、clipping 更新。</li></ul>
+<p>DPO 更像离线偏好学习：</p>
+<ul><li>已经有 chosen/rejected；</li><li>直接比较 chosen 和 rejected 的 log probability；</li><li>用 reference model 控制偏离程度。</li></ul>
+<p>DPO 的工程链路通常更简单，但它依赖偏好数据质量。</p>
+<h2 id="下一步">下一步</h2>
+<p>下一章会讲 GRPO。GRPO 会回到“采样多条答案并打分”的路径，但不使用 value model，而是用组内相对 reward 构造 advantage。</p>
+<p>上一章：<a href="./17_ppo_rlhf.html">17. PPO：经典 RLHF 的核心优化器</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./17_ppo_rlhf.html"><span>上一篇</span><strong>PPO：经典 RLHF 的核心优化器</strong></a>
+        <a href="./19_grpo_verifiable_tasks.html"><span>下一篇</span><strong>GRPO：面向可验证任务的组内相对优化</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/18_dpo_preference_optimization.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

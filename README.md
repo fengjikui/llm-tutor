@@ -74,7 +74,12 @@ uv run python -m llm_tutor.experiments.train_mini_gpt \
 ## 专栏网站
 
 仓库里已经加入一个个人网站专栏第一版，入口在 [site/index.html](site/index.html)。
-它把 20 章教程重新组织成 4 个阶段，并把精选章节、实验命令、代码入口和参考审美放在同一个页面里。
+它把 23 章教程重新组织成 5 个阶段，并把精选章节、实验命令、代码入口和参考审美放在同一个页面里。
+章节正文由 `tutorials/*.md` 自动渲染到 `site/chapters/*.html`，所以内容维护时优先修改 Markdown，再运行构建脚本：
+
+```bash
+uv run python scripts/build_site.py
+```
 
 本地直接打开 HTML 即可预览；如果希望用本地服务：
 

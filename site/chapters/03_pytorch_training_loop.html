@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="建立后续所有实验都会复用的 PyTorch 训练循环和 shape 读法。" />
+    <title>03. PyTorch 快速生存指南 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/03_pytorch_training_loop.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            最小地基 / Chapter 03
+          </p>
+          <h1>03. PyTorch 快速生存指南</h1>
+          <p class="article-summary">建立后续所有实验都会复用的 PyTorch 训练循环和 shape 读法。</p>
+          <div class="article-tags"><span>PyTorch</span><span>DataLoader</span><span>loop</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#tensor">Tensor</a>
+<a class="toc-level-2" href="#dataset-和-dataloader">Dataset 和 DataLoader</a>
+<a class="toc-level-2" href="#nn-module">nn.Module</a>
+<a class="toc-level-2" href="#标准训练循环">标准训练循环</a>
+<a class="toc-level-2" href="#训练模式和评估模式">训练模式和评估模式</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能说明什么">这个实验不能说明什么</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：Tensor shape、Dataset/DataLoader、<code>nn.Module</code>、标准训练循环。</li><li>实验要验证：后续 CNN、RNN、Transformer、GPT 都可以复用同一个 <code>forward -&gt; loss -&gt; backward -&gt; step</code> 骨架。</li><li>实验不验证：它不要求 GPU，也不试图一次讲完 PyTorch 的所有 API。</li><li>跑完重点看：数据 batch 的 shape、训练 loss、验证指标，以及代码里清零梯度和更新参数的位置。</li></ul>
+<p>PyTorch 训练脚本的核心结构非常稳定。后面的 CNN、RNN、Transformer、GPT 都会反复出现这几个动作。</p>
+<h2 id="tensor">Tensor</h2>
+<p>Tensor 是 PyTorch 里的基本数据容器。它可以是一维向量、二维矩阵，也可以是更高维的图像或序列 batch。</p>
+<p>常见 shape：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">表格 batch: [batch_size, num_features]
+图像 batch: [batch_size, channels, height, width]
+文本 batch: [batch_size, sequence_length]
+分类 logits: [batch_size, num_classes]
+GPT input_ids: [batch_size, sequence_length]
+GPT logits: [batch_size, sequence_length, vocab_size]
+GPT labels: [batch_size, sequence_length]</code></pre></figure>
+<p>理解 shape 是读懂深度学习代码的第一件事。</p>
+<h2 id="dataset-和-dataloader">Dataset 和 DataLoader</h2>
+<p><code>Dataset</code> 负责告诉 PyTorch “第 i 个样本是什么”。 <code>DataLoader</code> 负责把样本打包成 batch，并控制 shuffle。</p>
+<p>第一阶段代码里，表格数据被包装成：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">TensorDataset(features, labels)</code></pre></figure>
+<p>每次训练循环拿到：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">x, y = batch</code></pre></figure>
+<h2 id="nn-module">nn.Module</h2>
+<p>模型通常继承 <code>nn.Module</code>，并实现 <code>forward</code>：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">class LinearClassifier(nn.Module):
+    def __init__(self, num_features):
+        super().__init__()
+        self.linear = nn.Linear(num_features, 2)
+
+    def forward(self, x):
+        return self.linear(x)</code></pre></figure>
+<p>当我们写：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">logits = model(x)</code></pre></figure>
+<p>PyTorch 实际会调用 <code>model.forward(x)</code>。</p>
+<h2 id="标准训练循环">标准训练循环</h2>
+<p>核心代码在 <code>src/llm_tutor/training/loop.py</code>：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">logits = model(x)
+loss = loss_fn(logits, y)
+
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()</code></pre></figure>
+<p>每一行的作用：</p>
+<ul><li><code>model(x)</code>：前向传播，得到预测。</li><li><code>loss_fn(logits, y)</code>：计算预测和标签之间的差距。</li><li><code>optimizer.zero_grad()</code>：清掉上一轮残留的梯度。</li><li><code>loss.backward()</code>：反向传播，计算新梯度。</li><li><code>optimizer.step()</code>：更新参数。</li></ul>
+<p>可以把边界记成一句话：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">model(x) 到 loss 是前向传播；
+loss.backward() 是反向传播；
+optimizer.step() 是拿已经算好的梯度改参数。</code></pre></figure>
+<p><code>optimizer.step()</code> 本身不再计算梯度，它只读取参数里的 <code>.grad</code>。这也是 <code>zero_grad()</code> 必须放在下一次 <code>backward()</code> 之前的原因。</p>
+<p>如果故意不调用 <code>zero_grad()</code>，PyTorch 会把多个 batch 的梯度累积起来。这在少数场景里是有意为之，叫 gradient accumulation；但初学阶段如果无意累积，常见现象是 loss 波动异常、学习率看起来莫名变大。</p>
+<h2 id="训练模式和评估模式">训练模式和评估模式</h2>
+<p>真实训练代码里还会出现几行看似仪式感很强、但非常重要的语句：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">model.train()
+model.eval()
+with torch.no_grad():
+    ...
+x = x.to(device)</code></pre></figure>
+<ul><li><code>model.train()</code>：告诉模型现在是训练阶段。后面讲 Dropout、BatchNorm 时会看到它的影响。</li><li><code>model.eval()</code>：告诉模型现在是评估阶段，不要使用训练时的随机行为。</li><li><code>torch.no_grad()</code>：评估时不需要记录计算图，可以省内存、加快速度。</li><li><code>.to(device)</code>：把数据和模型放到同一个设备上，例如 CPU 或 GPU。</li></ul>
+<p>GPT 生成文本时通常也会用 <code>model.eval()</code> 和 <code>torch.no_grad()</code>，因为生成阶段只需要前向传播，不需要更新参数。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_linear_classifier --epochs 5</code></pre></figure>
+<p>读者应该重点观察：</p>
+<ul><li>train loss 是否整体下降。</li><li>val loss 是否同步下降。</li><li>val accuracy/F1 是否提高。</li></ul>
+<p>如果训练 loss 下降但验证指标变差，往往意味着过拟合或数据切分有问题。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>PyTorch 训练循环有稳定套路。</li><li>训练集和验证集应该分开统计。</li><li>同一套 loop 后续可以服务图像、序列和语言模型。</li></ul>
+<h2 id="这个实验不能说明什么">这个实验不能说明什么</h2>
+<ul><li>它不能说明所有任务都只需要分类指标。</li><li>它不能说明训练 loop 越抽象越好。教学阶段保留显式步骤更重要。</li><li>它不能说明 GPU 是必须的。第一阶段所有实验都可以在 CPU 上跑。</li></ul>
+<p>上一章：<a href="./02_loss_gradient_optimizer.html">02. 损失函数、梯度下降和优化器</a> 下一章：<a href="./04_neural_network_basics.html">04. 神经网络基础</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./02_loss_gradient_optimizer.html"><span>上一篇</span><strong>损失函数、梯度下降和优化器</strong></a>
+        <a href="./04_neural_network_basics.html"><span>下一篇</span><strong>神经网络基础：从线性模型到多层非线性函数</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/03_pytorch_training_loop.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

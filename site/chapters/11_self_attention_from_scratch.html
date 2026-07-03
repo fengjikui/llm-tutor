@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="手写 scaled dot-product attention 和 multi-head self-attention，理解 Q/K/V、padding mask、causal mask 和 shape 变化。" />
+    <title>11. Self-Attention 从零实现 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/11_self_attention_from_scratch.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            Transformer / Chapter 11
+          </p>
+          <h1>11. Self-Attention 从零实现</h1>
+          <p class="article-summary">手写 scaled dot-product attention 和 multi-head self-attention，理解 Q/K/V、padding mask、causal mask 和 shape 变化。</p>
+          <div class="article-tags"><span>self-attention</span><span>mask</span><span>QKV</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#q-k-v">Q、K、V</a>
+<a class="toc-level-2" href="#scaled-dot-product-attention">Scaled Dot-Product Attention</a>
+<a class="toc-level-2" href="#multi-head-attention">Multi-Head Attention</a>
+<a class="toc-level-2" href="#padding-mask">Padding Mask</a>
+<a class="toc-level-2" href="#causal-mask">Causal Mask</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：self-attention、Q/K/V、scaled dot-product、multi-head、padding mask、causal mask。</li><li>实验要验证：同一段序列内部的 token 可以互相查询，并且 mask 能控制哪些位置允许被看见。</li><li>实验不验证：它还不是完整 Transformer block，也没有训练一个文本模型。</li><li>跑完重点看：attention 权重 shape、padding 位置权重是否被压掉、causal mask 下未来 token 权重是否为 0。</li></ul>
+<p>上一章的 attention 是 cross-attention：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">decoder 查询 encoder</code></pre></figure>
+<p>Self-attention 的变化是：query、key、value 都来自同一个序列。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">一个序列内部的 token 互相读取信息</code></pre></figure>
+<p>这一步非常关键。Transformer 的核心就是 self-attention。</p>
+<p>先把两者并排看：</p>
+<div class="table-wrap"><table><thead><tr><th>类型</th><th>Q 的长度</th><th>K/V 的长度</th><th>Q/K/V 来源</th></tr></thead><tbody><tr><td>Cross-attention</td><td><code>target_len</code></td><td><code>source_len</code></td><td>Q 来自 decoder，K/V 来自 encoder</td></tr>
+<tr><td>Self-attention</td><td><code>seq_len</code></td><td><code>seq_len</code></td><td>Q/K/V 都来自同一段序列</td></tr></tbody></table></div>
+<p>所以 cross-attention 里 <code>query_len</code> 和 <code>key_len</code> 可以不同；self-attention 里通常相同，都是当前序列长度。</p>
+<h2 id="q-k-v">Q、K、V</h2>
+<p>给定输入：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x [batch, seq_len, embed_dim]</code></pre></figure>
+<p>Self-attention 会通过线性层得到三组向量：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">Q = x @ W_q
+K = x @ W_k
+V = x @ W_v</code></pre></figure>
+<p>直觉上：</p>
+<ul><li>Query：当前 token 想找什么信息。</li><li>Key：每个 token 提供什么索引。</li><li>Value：真正被取回的内容。</li></ul>
+<p>先用 Q 和 K 算匹配分数，再用分数加权 V。</p>
+<h2 id="scaled-dot-product-attention">Scaled Dot-Product Attention</h2>
+<p>核心公式：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">scores = Q @ K^T / sqrt(head_dim)
+weights = softmax(scores)
+output = weights @ V</code></pre></figure>
+<p>为什么要除以 <code>sqrt(head_dim)</code>？ 因为维度越大，点积数值越容易变大，softmax 可能变得过于尖锐，训练不稳定。缩放能让分数范围更温和。</p>
+<h2 id="multi-head-attention">Multi-Head Attention</h2>
+<p>一个 attention head 只能从一个表示子空间里看关系。Multi-head attention 会先投影出 Q/K/V，再把每个投影后的表示切成多个 head：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, seq_len, embed_dim]
+-&gt; [batch, heads, seq_len, head_dim]</code></pre></figure>
+<p>每个 head 独立做 attention，最后再拼回：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, heads, seq_len, head_dim]
+-&gt; [batch, seq_len, embed_dim]</code></pre></figure>
+<p>这让模型可以同时关注不同类型的关系。你可以把它理解成：每个 head 在自己的子空间里做一次 attention。</p>
+<p>不过，“不同 head 学不同语法关系”只是一个帮助理解的直觉，不是保证。真实模型里有些 head 可能很重要，有些可能冗余，也有些模式很难解释。本章实验只检查 shape 和 mask，不声称每个 head 都一定学到清晰的人类概念。</p>
+<h2 id="padding-mask">Padding Mask</h2>
+<p>batch 里的文本长度可能不同，短文本会被 padding 到同一长度。padding token 不是真实内容，所以不应该被其他 token 关注。</p>
+<p>本章的 padding mask shape 是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, 1, 1, seq_len]</code></pre></figure>
+<p>它可以 broadcast 到 attention scores 的 shape：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[batch, heads, query_len, key_len]</code></pre></figure>
+<p>更精确地说，本章的 padding mask 屏蔽的是 padded key，也就是“不让其他 token 读取 padding 位置”。如果某个 query 本身是 padding，它的输出通常会在 loss 里被忽略；后面训练语言模型时也会继续使用 label mask。</p>
+<h2 id="causal-mask">Causal Mask</h2>
+<p>GPT 这类 decoder-only 语言模型不能看未来 token。训练时第 <code>t</code> 个位置只能看 <code>0..t</code> 的 token。</p>
+<p>Causal mask 是一个下三角矩阵：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">1 0 0 0
+1 1 0 0
+1 1 1 0
+1 1 1 1</code></pre></figure>
+<p>这就是 GPT 能做 next-token prediction 的关键之一。</p>
+<p>它和标签错位要一起理解。第 <code>t</code> 个输入位置的 hidden state 可以看见 <code>x[0..t]</code>，但它要预测的是 <code>y[t]</code>，也就是原始文本里的下一个 token：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">输入 x:  t   h   e
+标签 y:  h   e   空格
+位置:    0   1   2
+可见:    t   th  the</code></pre></figure>
+<p>所以 causal mask 不是让模型“只能看一个 token”，而是让每个位置只能看自己和左边历史，不能偷看右边答案。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.inspect_self_attention</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">x_shape=(2, 5, 16)
+token_ids=[[1, 2, 3, 4, 0], [6, 7, 8, 0, 0]]
+output_shape=(2, 5, 16)
+attention_shape=(2, 4, 5, 5)
+combined_mask_shape=(2, 1, 5, 5)
+first_head_weights_row0=[1.0, 0.0, 0.0, 0.0, 0.0]
+last_real_query_can_attend_to=[1, 1, 1, 1, 0]</code></pre></figure>
+<p><code>attention_shape=(2, 4, 5, 5)</code> 的含义是：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">batch=2
+heads=4
+query_len=5
+key_len=5</code></pre></figure>
+<p>第一行权重里只有第一个位置可见，是因为 causal mask 让第 0 个 token 不能看未来。<code>last_real_query_can_attend_to</code> 展示的是第一条样本最后一个真实 token 能看到哪些 key；最后的 <code>0</code> 是 padding key，被 padding mask 屏蔽了。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>Self-attention 的输入输出 shape 可以保持一致。</li><li>Padding mask 会阻止模型关注 padding token。</li><li>Causal mask 会阻止模型看未来。</li><li>Multi-head attention 只是把表示拆成多个 head 并行做 attention。</li></ul>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它还不是完整 Transformer block。</li><li>它没有训练语言模型，只是在检查机制和 shape。</li><li>它没有实现高性能 attention kernel，教学清晰优先。</li></ul>
+<h2 id="下一步">下一步</h2>
+<p>下一章会把 self-attention 放进 Transformer block：加上残差连接、LayerNorm 和 MLP。</p>
+<p>再往后，GPT 就是把 decoder-only Transformer block 堆起来，并用 causal mask 训练 next-token prediction。不过完整 GPT 还需要 token embedding、位置信息或 RoPE、残差连接、Norm 和 MLP；causal mask 本身并不足以表达顺序。</p>
+<p>上一章：<a href="./10_attention_seq2seq.html">10. Attention：让 decoder 不只看一个向量</a> 下一章：<a href="./12_transformer_block.html">12. Transformer Block：把 Self-Attention 组装起来</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./10_attention_seq2seq.html"><span>上一篇</span><strong>Attention：让 decoder 不只看一个向量</strong></a>
+        <a href="./12_transformer_block.html"><span>下一篇</span><strong>Transformer Block：把 Self-Attention 组装起来</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/11_self_attention_from_scratch.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

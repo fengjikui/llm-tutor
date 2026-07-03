@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="从手写线性回归梯度开始，理解 loss、gradient、learning rate 和 autograd。" />
+    <title>02. 损失函数、梯度下降和优化器 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/02_loss_gradient_optimizer.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            最小地基 / Chapter 02
+          </p>
+          <h1>02. 损失函数、梯度下降和优化器</h1>
+          <p class="article-summary">从手写线性回归梯度开始，理解 loss、gradient、learning rate 和 autograd。</p>
+          <div class="article-tags"><span>loss</span><span>gradient</span><span>SGD</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#从一条直线开始">从一条直线开始</a>
+<a class="toc-level-2" href="#mse-损失">MSE 损失</a>
+<a class="toc-level-2" href="#从-mse-到交叉熵">从 MSE 到交叉熵</a>
+<a class="toc-level-2" href="#梯度下降在做什么">梯度下降在做什么</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#为什么还需要-pytorch-autograd">为什么还需要 PyTorch autograd</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#常见失败">常见失败</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：损失函数、梯度、学习率、参数更新、autograd。</li><li>实验要验证：手写梯度和 PyTorch 自动求导在同一个简单问题上会给出一致的下降方向。</li><li>实验不验证：它不覆盖所有 loss，也不说明真实神经网络的梯度都应该手算。</li><li>跑完重点看：<code>loss</code> 是否变小，<code>w</code> 是否接近 <code>3</code>，<code>b</code> 是否接近 <code>-2</code>，手写版和 autograd 版趋势是否一致。</li></ul>
+<p>模型训练需要三个核心角色：</p>
+<ul><li>模型：给出预测。</li><li>损失函数：衡量预测有多错。</li><li>优化器：根据梯度更新参数。</li></ul>
+<p>如果没有损失函数，模型不知道自己错在哪里。如果没有梯度，模型不知道参数应该往哪个方向改。如果没有优化器，梯度就不会变成真正的参数更新。</p>
+<h2 id="从一条直线开始">从一条直线开始</h2>
+<p>我们构造一个 toy 数据集：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">y = 3x - 2 + noise</code></pre></figure>
+<p>模型一开始不知道真实的 <code>3</code> 和 <code>-2</code>，只知道自己有两个参数：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">y_hat = x * w + b</code></pre></figure>
+<p>训练的目标是让 <code>w</code> 接近 <code>3</code>，让 <code>b</code> 接近 <code>-2</code>。</p>
+<p>你可能会问：第一章明明是分类，为什么第二章突然换成回归直线？原因很简单：直线回归的梯度可以完整手算，适合把“loss 怎么变成参数更新”这件事看清楚。分类和回归的训练闭环相同：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">预测 -&gt; loss -&gt; 梯度 -&gt; 参数更新</code></pre></figure>
+<p>只是分类常用交叉熵，回归常用 MSE。本章用回归讲梯度，不代表课程主线从分类变成了回归。</p>
+<h2 id="mse-损失">MSE 损失</h2>
+<p>回归任务常用均方误差：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">loss = mean((y_hat - y)^2)</code></pre></figure>
+<p>预测越接近真实值，loss 越小。</p>
+<h2 id="从-mse-到交叉熵">从 MSE 到交叉熵</h2>
+<p>第一章做的是分类任务，不是回归任务。分类里模型输出的是每个类别的 <code>logits</code>，也就是还没有归一化的分数：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">logits = [malignant_score, benign_score]</code></pre></figure>
+<p>如果想把 logits 变成概率，可以使用 softmax：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">prob_i = exp(logit_i) / sum(exp(logit_j))</code></pre></figure>
+<p>交叉熵关注的是“真实类别对应的概率有多高”。如果真实类别的概率越高，loss 越小；如果真实类别概率很低，loss 就会很大。</p>
+<p>PyTorch 的 <code>nn.CrossEntropyLoss</code> 有一个容易误解的点：它直接接收 logits，不需要你先手动 softmax。也就是说，分类训练里常见代码是：</p>
+<figure class="code-block"><figcaption>python</figcaption><pre><code class="language-python">logits = model(x)
+loss = nn.CrossEntropyLoss()(logits, labels)</code></pre></figure>
+<p>后面的 GPT 训练也会用交叉熵。区别是：表格分类通常每个样本只有一个标签，而 GPT 会在每个 token 位置预测下一个 token。</p>
+<p>一个粗略选择原则是：</p>
+<div class="table-wrap"><table><thead><tr><th>任务</th><th>模型输出</th><th>常见 loss</th><th>例子</th></tr></thead><tbody><tr><td>回归</td><td>连续数值</td><td>MSE</td><td>预测房价、温度、直线参数</td></tr>
+<tr><td>分类</td><td>类别 logits</td><td>Cross Entropy</td><td>肿瘤良恶性、图像类别、下一个 token</td></tr></tbody></table></div>
+<p>MSE 惩罚数值距离，交叉熵惩罚“真实类别概率太低”。所以 GPT 虽然是在生成文本，本质上仍然是在每个位置做词表分类。</p>
+<h2 id="梯度下降在做什么">梯度下降在做什么</h2>
+<p>对 <code>y_hat = x * w + b</code> 来说，loss 对 <code>w</code> 和 <code>b</code> 的梯度可以手动写出来：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">dloss/dw = mean(2 * (y_hat - y) * x)
+dloss/db = mean(2 * (y_hat - y))</code></pre></figure>
+<p>参数更新：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">w = w - lr * dloss/dw
+b = b - lr * dloss/db</code></pre></figure>
+<p><code>lr</code> 是 learning rate。它决定每一步走多远。</p>
+<p>为什么是减去梯度，而不是加上梯度？梯度指向 loss 增长最快的方向。我们想让 loss 变小，就要往相反方向走：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">new_param = old_param - learning_rate * gradient</code></pre></figure>
+<p>如果某个位置梯度为正，说明参数继续增大会让 loss 变大，所以应该把参数减小；如果梯度为负，减去一个负数就会让参数变大。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.manual_gradient_descent</code></pre></figure>
+<p>脚本会打印两组结果：</p>
+<ul><li>手动计算梯度的版本。</li><li>PyTorch autograd 的版本。</li></ul>
+<p>你应该能看到两者都逐渐接近同一条直线。</p>
+<p>样例输出大致会长这样：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">manual gradient descent
+step=001 w=+0.411 b=-0.199 loss=...
+...
+step=080 w=+2.987 b=-1.991 loss=...
+
+PyTorch autograd
+step=001 w=+0.411 b=-0.199 loss=...
+...
+step=080 w=+2.987 b=-1.991 loss=...</code></pre></figure>
+<p>最终参数不会精确等于 <code>3</code> 和 <code>-2</code>，因为数据里故意加了噪声；学习率和训练步数也会影响最终接近程度。</p>
+<h2 id="为什么还需要-pytorch-autograd">为什么还需要 PyTorch autograd</h2>
+<p>一条直线的梯度可以手算，但神经网络有成千上万甚至上百亿个参数。手动推导和实现每个参数的梯度不现实。</p>
+<p>PyTorch 的 autograd 会记录前向传播的计算图，并在 <code>loss.backward()</code> 时自动应用链式法则，把每个参数的梯度算出来。</p>
+<p>这不是魔法。它只是把我们刚才手写的梯度计算扩展到了复杂计算图上。</p>
+<p><code>loss.backward()</code> 之后，梯度会存到每个可训练参数的 <code>.grad</code> 里。比如线性模型里的 <code>w.grad</code>、<code>b.grad</code> 会从 <code>None</code> 或上一轮残留值，变成本轮计算出的梯度张量。随后 <code>optimizer.step()</code> 读取这些 <code>.grad</code> 来更新参数。</p>
+<p>这也解释了为什么训练循环里总要先清梯度：PyTorch 默认会累积梯度。如果不清空，下一轮 batch 的梯度会叠加到上一轮上，参数更新幅度就不再对应当前 batch。</p>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它不能说明所有 loss 都像 MSE 一样容易手算。</li><li>它不能说明 learning rate 越大越好。太大的学习率可能让 loss 震荡甚至发散。</li><li>它不能说明 autograd 和手写梯度永远一样；这里只是因为模型足够简单，方便对照。</li></ul>
+<h2 id="常见失败">常见失败</h2>
+<ul><li>loss 降不下去：先把 learning rate 调小，或者增加训练步数。</li><li>参数方向错：检查梯度更新是不是 <code>参数 -= lr * 梯度</code>。</li><li>手写版和 autograd 不一致：检查是不是忘了清空梯度，或者记录的是更新前/更新后的不同状态。</li></ul>
+<p>上一章：<a href="./01_machine_learning_basics.html">01. 机器学习到底在学什么</a> 下一章：<a href="./03_pytorch_training_loop.html">03. PyTorch 快速生存指南</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./01_machine_learning_basics.html"><span>上一篇</span><strong>机器学习到底在学什么</strong></a>
+        <a href="./03_pytorch_training_loop.html"><span>下一篇</span><strong>PyTorch 快速生存指南</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/02_loss_gradient_optimizer.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>

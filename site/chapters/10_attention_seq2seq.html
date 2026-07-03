@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="在 Seq2Seq 翻译 toy 实验上加入 additive attention，理解对齐权重、context vector 和 Q/K/V 的前身直觉。" />
+    <title>10. Attention：让 decoder 不只看一个向量 | Jikui Notes</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../index.html#top" aria-label="Jikui Notes">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>Jikui Notes</span>
+      </a>
+      <nav class="top-nav" aria-label="主导航">
+        <a href="../index.html#route">路线</a>
+        <a href="../index.html#chapters">章节</a>
+        <a href="../index.html#experiments">实验</a>
+        <a href="../index.html#references">参考</a>
+      </nav>
+      <a class="header-action" href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/10_attention_seq2seq.md">GitHub</a>
+    </header>
+
+    <main class="article-main">
+      <section class="article-hero">
+        <div>
+          <a class="article-back" href="../index.html#chapters">返回章节列表</a>
+          <p class="series-label">
+            视觉与序列 / Chapter 10
+          </p>
+          <h1>10. Attention：让 decoder 不只看一个向量</h1>
+          <p class="article-summary">在 Seq2Seq 翻译 toy 实验上加入 additive attention，理解对齐权重、context vector 和 Q/K/V 的前身直觉。</p>
+          <div class="article-tags"><span>attention</span><span>alignment</span><span>context</span></div>
+        </div>
+      </section>
+
+      <section class="article-shell">
+        <aside class="article-toc" aria-label="本文目录">
+          <strong>本文目录</strong>
+          <nav><a class="toc-level-2" href="#本章学习契约">本章学习契约</a>
+<a class="toc-level-2" href="#attention-在做什么">Attention 在做什么</a>
+<a class="toc-level-2" href="#context-vector">Context Vector</a>
+<a class="toc-level-2" href="#q-k-v-的前身直觉">Q/K/V 的前身直觉</a>
+<a class="toc-level-2" href="#运行实验">运行实验</a>
+<a class="toc-level-2" href="#这个实验能说明什么">这个实验能说明什么</a>
+<a class="toc-level-2" href="#这个实验不能证明什么">这个实验不能证明什么</a>
+<a class="toc-level-2" href="#下一步">下一步</a></nav>
+        </aside>
+        <article class="markdown-body">
+          <h2 id="本章学习契约">本章学习契约</h2>
+<ul><li>新增概念：attention score、attention weight、context vector、cross-attention 的 Q/K/V 直觉。</li><li>实验要验证：decoder 生成每个目标 token 时，可以动态回看 encoder 的所有位置。</li><li>实验不验证：它还不是 Transformer，也不是高质量翻译系统。</li><li>跑完重点看：attention 权重的 shape、每一行权重是否近似求和为 1，以及目标 token 更关注哪些源 token。</li></ul>
+<p>上一章的 Seq2Seq 有一个明显瓶颈：encoder 读完整个输入句子后，只把最后状态交给 decoder。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">source sentence -&gt; encoder final hidden -&gt; decoder</code></pre></figure>
+<p>如果句子很长，所有信息都挤在一个向量里。decoder 生成每个目标 token 时，都只能依赖这个固定摘要。</p>
+<p>Attention 的想法是：decoder 每一步生成时，都可以回看 encoder 的所有位置。</p>
+<h2 id="attention-在做什么">Attention 在做什么</h2>
+<p>假设 encoder 读完源句后，留下每个位置的输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">encoder_outputs [batch, source_len, hidden_size]</code></pre></figure>
+<p>decoder 在生成第 <code>t</code> 个目标 token 时，也有一个当前状态：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">decoder_output_t [batch, hidden_size]</code></pre></figure>
+<p>attention 会用当前 decoder 状态去给每个 source 位置打分，再做 softmax：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">attention_weights [batch, target_len, source_len]</code></pre></figure>
+<p>这些权重表示：生成当前目标 token 时，decoder 更关注源句的哪些位置。</p>
+<h2 id="context-vector">Context Vector</h2>
+<p>有了 attention weights，就可以对 encoder outputs 做加权求和：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">context = attention_weights @ encoder_outputs</code></pre></figure>
+<p>这个 <code>context</code> 是 decoder 当前步骤从源句里取回来的信息。然后模型把 decoder output 和 context 拼起来，再预测下一个目标 token。</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">[decoder_output, context] -&gt; Linear -&gt; target logits</code></pre></figure>
+<p>这三个张量不要混在一起：</p>
+<div class="table-wrap"><table><thead><tr><th>名称</th><th>shape</th><th>含义</th></tr></thead><tbody><tr><td><code>attention_weights</code></td><td><code>[batch, target_len, source_len]</code></td><td>当前目标位置在看源句哪里</td></tr>
+<tr><td><code>context</code></td><td><code>[batch, target_len, hidden]</code></td><td>从源句按权重取回的信息</td></tr>
+<tr><td><code>logits</code></td><td><code>[batch, target_len, vocab_size]</code></td><td>最终预测每个目标 token 的词表分数</td></tr></tbody></table></div>
+<p>attention weight 不是最终答案，它只是“取信息的比例”。logits 才会进入 cross entropy。</p>
+<h2 id="q-k-v-的前身直觉">Q/K/V 的前身直觉</h2>
+<p>Transformer 里会正式讲 Query、Key、Value。现在可以先建立直觉：</p>
+<ul><li>decoder 当前状态像 query：它在问“我现在需要源句里的什么信息？”</li><li>encoder outputs 像 key/value：它们既参与匹配，也提供被取回的信息。</li><li>attention weights 是 query 和每个 source 位置匹配后的权重。</li></ul>
+<p>更精确地说，本实现里 query/key 会先经过线性投影，value 直接使用 encoder outputs。</p>
+<p>本章用的是 Bahdanau 风格的 additive 打分函数。为了让代码更容易读，我们先一次性跑完整个 decoder，再对 decoder outputs 计算 attention；这不是完整复刻 Bahdanau decoder 的所有细节。Transformer 会换成 scaled dot-product attention，但“根据当前需要去取信息”的直觉是一脉相承的。</p>
+<p>从下一章开始，最大变化是 Q/K/V 的来源：</p>
+<div class="table-wrap"><table><thead><tr><th>类型</th><th>Query 来自</th><th>Key/Value 来自</th><th>典型用途</th></tr></thead><tbody><tr><td>Cross-attention</td><td>decoder 当前状态</td><td>encoder outputs</td><td>翻译 decoder 回看源句</td></tr>
+<tr><td>Self-attention</td><td>同一个序列</td><td>同一个序列</td><td>Transformer/GPT 内部 token 互相读取</td></tr></tbody></table></div>
+<p>所以 self-attention 不是全新魔法，而是把“查询并取回信息”这件事放回同一段序列内部。</p>
+<h2 id="运行实验">运行实验</h2>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_attention_seq2seq --epochs 80</code></pre></figure>
+<p>快速 smoke test：</p>
+<figure class="code-block"><figcaption>bash</figcaption><pre><code class="language-bash">uv run python -m llm_tutor.experiments.train_attention_seq2seq --epochs 2</code></pre></figure>
+<p>样例输出：</p>
+<figure class="code-block"><figcaption>text</figcaption><pre><code class="language-text">epoch=001 train_loss=... val_loss=...
+...
+attention_shape=(batch, target_len, source_len) logits_shape=(batch, target_len, vocab_size)
+src='...' target='...' pred='...'</code></pre></figure>
+<p>这个 toy 实验仍然不是真实翻译评测。它的重点是让你看到 attention 的张量形状和信息流动。</p>
+<h2 id="这个实验能说明什么">这个实验能说明什么</h2>
+<ul><li>Decoder 可以在每个目标位置回看所有 encoder output。</li><li>Attention weights 在 source length 维度上做 softmax。</li><li>Context vector 是对 encoder outputs 的加权求和。</li><li>Attention 是后面 Transformer self-attention 的前置直觉。</li></ul>
+<h2 id="这个实验不能证明什么">这个实验不能证明什么</h2>
+<ul><li>它不能证明 attention 一定让这个小 toy 数据显著变好。</li><li>它不能代表真实机器翻译系统。</li><li>它还不是 Transformer，因为它仍然使用 RNN encoder/decoder。</li></ul>
+<h2 id="下一步">下一步</h2>
+<p>本章是 decoder 查询 encoder 的 cross-attention。接下来我们会把 attention 从 RNN 结构里拿出来，专门研究 self-attention：query、key、value 都来自同一个序列，一个序列内部的每个 token 可以互相读取信息。</p>
+<p>这一步会通向 Transformer。</p>
+<p>上一章：<a href="./09_seq2seq_translation.html">09. Seq2Seq：从分类到生成</a> 下一章：<a href="./11_self_attention_from_scratch.html">11. Self-Attention 从零实现</a></p>
+        </article>
+      </section>
+
+      <nav class="article-nav" aria-label="章节导航">
+        <a href="./09_seq2seq_translation.html"><span>上一篇</span><strong>Seq2Seq：从分类到生成</strong></a>
+        <a href="./11_self_attention_from_scratch.html"><span>下一篇</span><strong>Self-Attention 从零实现</strong></a>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <span>Jikui Notes · 从梯度下降到 GPT</span>
+      <a href="https://github.com/fengjikui/llm-tutor/blob/main/tutorials/10_attention_seq2seq.md">在 GitHub 查看本章</a>
+    </footer>
+  </body>
+</html>
