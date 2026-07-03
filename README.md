@@ -10,7 +10,8 @@
 
 课程会采用“概念解释 + 代码实现 + 实验观察 + 常见坑”的形式。前半部分服务于建立地基，后半部分重点放在 Transformer、GPT 和 LLM post-training。
 
-完整大纲见 [COURSE_OUTLINE.md](COURSE_OUTLINE.md)。
+完整大纲见 [COURSE_OUTLINE.md](COURSE_OUTLINE.md)。实验真实性和后续升级路线见
+[docs/EXPERIMENT_REALISM_REDESIGN.md](docs/EXPERIMENT_REALISM_REDESIGN.md)。
 
 ## 本地运行
 
@@ -38,7 +39,7 @@ bash scripts/smoke_test.sh
 
 默认实验按本地 CPU 可跑设计。脚本会在可用时优先使用 CUDA；没有 NVIDIA GPU 时会自动使用 CPU。当前版本没有强依赖 4090 这类显卡。
 
-如果只是学习教程主线、跑 smoke test、训练 mini-GPT 的 tiny 配置，普通笔记本即可。显卡更适合后续扩展实验：更大图像数据集、更长 mini-GPT 训练、更大的 instruction 数据、更真实的 PPO/DPO/GRPO 或 Hugging Face/TRL 实验。
+如果只是学习教程主线、跑 smoke test、训练 mini-GPT 的 tiny 配置，普通笔记本即可。显卡更适合后续扩展实验：更大图像数据集、更长 mini-GPT 训练、更大的 instruction 数据、更真实的 PPO/DPO/GRPO 或 Hugging Face/TRL 实验。后续实验会区分 `smoke`、`real` 和 `gpu` 三条运行轨道，避免把极小样本流程误认为真实效果。
 
 单独运行实验：
 

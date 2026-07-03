@@ -27,6 +27,8 @@
 
 本大纲后半部分仍保留一些早期“计划产出”字段，例如 notebooks 或未来扩展实验名。阅读与复现实验时，以 `tutorials/*.md` 正文和实际 `src/llm_tutor/experiments/` 脚本为准；这些旧计划字段会在后续迭代里逐步改成当前文件索引和扩展路线。
 
+实验层面的新基线见 [docs/EXPERIMENT_REALISM_REDESIGN.md](docs/EXPERIMENT_REALISM_REDESIGN.md)。后续每章会区分 `Microscope Lab`、`Real Lab` 和必要时的 `GPU Lab`：tiny 实验只解释机制，章节主实验要使用真实公开数据、真实训练目标和可保存指标。
+
 ## 统一章节模板
 
 每一章尽量保持一致结构：
