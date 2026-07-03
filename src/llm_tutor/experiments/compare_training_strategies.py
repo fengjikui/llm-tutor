@@ -8,6 +8,11 @@ import torch
 from torch import nn
 
 from llm_tutor.data.tabular import load_breast_cancer_data
+from llm_tutor.experiments.artifacts import (
+    ExperimentArtifacts,
+    add_artifact_args,
+    args_to_config,
+)
 from llm_tutor.models.feedforward import BasicNeuralNetwork
 from llm_tutor.training.loop import evaluate_classifier, train_classifier
 
@@ -49,8 +54,21 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--hidden-size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
+    add_artifact_args(parser)
     args = parser.parse_args()
 
+    artifacts = ExperimentArtifacts.create(
+        args.output_dir,
+        experiment_name="compare_training_strategies",
+        config=args_to_config(args),
+    )
+    with artifacts.capture_stdout():
+        if artifacts.enabled:
+            print(f"artifacts_dir={artifacts.run_dir}")
+        _run(args, artifacts)
+
+
+def _run(args: argparse.Namespace, artifacts: ExperimentArtifacts) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rows: list[tuple[TrainingStrategy, float, float, float]] = []
     best_strategy: TrainingStrategy | None = None
@@ -76,6 +94,8 @@ def main() -> None:
             optimizer_name=strategy.optimizer_name,
             weight_decay=strategy.weight_decay,
         )
+        for row in history:
+            artifacts.append_metric({"phase": "strategy_train", "strategy": strategy.name, **row})
         final = history[-1]
         rows.append(
             (
@@ -116,6 +136,10 @@ def main() -> None:
         optimizer_name=best_strategy.optimizer_name,
         weight_decay=best_strategy.weight_decay,
     )
+    for row in history:
+        artifacts.append_metric(
+            {"phase": "selected_retrain", "strategy": best_strategy.name, **row}
+        )
     test = evaluate_classifier(
         model,
         data.test_loader,
@@ -130,6 +154,34 @@ def main() -> None:
         f"malignant_precision={test.metrics.precision:.4f} "
         f"malignant_recall={test.metrics.recall:.4f} "
         f"malignant_f1={test.metrics.f1:.4f}"
+    )
+    artifacts.write_summary(
+        {
+            "dataset": "Breast Cancer Wisconsin",
+            "device": str(device),
+            "hidden_size": args.hidden_size,
+            "strategies": [
+                {
+                    "name": strategy.name,
+                    "optimizer_name": strategy.optimizer_name,
+                    "lr": strategy.lr,
+                    "weight_decay": strategy.weight_decay,
+                    "dropout": strategy.dropout,
+                    "val_loss": val_loss,
+                    "val_accuracy": val_acc,
+                    "malignant_val_f1": val_f1,
+                }
+                for strategy, val_loss, val_acc, val_f1 in rows
+            ],
+            "selected_by_val_loss": best_strategy.name,
+            "test": {
+                "loss": test.loss,
+                "accuracy": test.metrics.accuracy,
+                "malignant_precision": test.metrics.precision,
+                "malignant_recall": test.metrics.recall,
+                "malignant_f1": test.metrics.f1,
+            },
+        }
     )
 
 

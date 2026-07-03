@@ -60,6 +60,16 @@ uv run python -m llm_tutor.experiments.train_mini_gpt \
   --checkpoint-path checkpoints/mini_gpt.pt
 ```
 
+如果希望把配置、逐 epoch loss、生成样例、终端输出和 checkpoint 放进同一个可复盘目录，可以使用 `--output-dir`：
+
+```bash
+uv run python -m llm_tutor.experiments.train_mini_gpt \
+  --epochs 2 \
+  --output-dir runs/mini-gpt-smoke
+```
+
+这个目录会包含 `config.json`、`metrics.jsonl`、`summary.json`、`stdout.log` 和 `mini_gpt.pt`。如果你同时传入 `--checkpoint-path`，checkpoint 会写到你指定的位置，summary 里会记录这个路径。
+
 加载并生成：
 
 ```bash
@@ -68,6 +78,8 @@ uv run python -m llm_tutor.experiments.generate_with_mini_gpt \
   --prompt "the " \
   --max-new-tokens 120
 ```
+
+生成脚本也支持 `--output-dir`，适合保存同一个 checkpoint 在不同 temperature、top-k、top-p 下的输出对比。
 
 ## Temperature
 
@@ -127,6 +139,8 @@ uv run python -m llm_tutor.experiments.train_mini_gpt \
 ```
 
 这个输出不会像自然语言，但它能验证训练、保存、加载和生成这条路径。
+
+保存下来的 `metrics.jsonl` 可以一行行对照 train/validation loss；`summary.json` 则适合快速看最后 loss、生成样例和 checkpoint 位置。后面做更大实验时，不要只保留“最后一句生成结果”，训练过程本身也是实验结论的一部分。
 
 默认脚本会优先使用 CUDA；没有 GPU 时会自动落到 CPU。当前课程的默认 smoke 参数按 CPU 可跑设计，4090 这类显卡只有在你想扩大语料、模型尺寸、训练轮数或做更真实的后训练实验时才有必要。
 

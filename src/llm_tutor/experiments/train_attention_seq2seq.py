@@ -6,6 +6,11 @@ import torch
 from torch import nn
 
 from llm_tutor.data.translation import TranslationBatch, load_toy_translation_data
+from llm_tutor.experiments.artifacts import (
+    ExperimentArtifacts,
+    add_artifact_args,
+    args_to_config,
+)
 from llm_tutor.models.seq2seq import AttentionSeq2SeqGRU
 
 
@@ -17,8 +22,21 @@ def main() -> None:
     parser.add_argument("--hidden-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--seed", type=int, default=42)
+    add_artifact_args(parser)
     args = parser.parse_args()
 
+    artifacts = ExperimentArtifacts.create(
+        args.output_dir,
+        experiment_name="train_attention_seq2seq",
+        config=args_to_config(args),
+    )
+    with artifacts.capture_stdout():
+        if artifacts.enabled:
+            print(f"artifacts_dir={artifacts.run_dir}")
+        _run(args, artifacts)
+
+
+def _run(args: argparse.Namespace, artifacts: ExperimentArtifacts) -> None:
     torch.manual_seed(args.seed)
     data = load_toy_translation_data(batch_size=args.batch_size, seed=args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,14 +51,26 @@ def main() -> None:
     loss_fn = nn.CrossEntropyLoss(ignore_index=data.target_vocab.pad_id)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    history: list[dict[str, float]] = []
     for epoch in range(1, args.epochs + 1):
         train_loss = _run_epoch(model, data.train_loader, loss_fn, device, optimizer=optimizer)
         val_loss = _run_epoch(model, data.val_loader, loss_fn, device)
+        row = {
+            "phase": "train",
+            "epoch": float(epoch),
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+        }
+        history.append(row)
+        artifacts.append_metric(row)
         if epoch == 1 or epoch % 10 == 0 or epoch == args.epochs:
             print(f"epoch={epoch:03d} train_loss={train_loss:.4f} val_loss={val_loss:.4f}")
 
     print("\ntranslations")
     model.eval()
+    translations = []
+    attention_shape = None
+    logits_shape = None
     with torch.no_grad():
         for batch in data.test_loader:
             batch = _move_batch(batch, device)
@@ -52,18 +82,38 @@ def main() -> None:
                 max_len=batch.target_output.shape[1] + 2,
             )
             logits, attention = model(batch.source, batch.target_input, return_attention=True)
-            print(f"attention_shape={tuple(attention.shape)} logits_shape={tuple(logits.shape)}")
+            attention_shape = tuple(attention.shape)
+            logits_shape = tuple(logits.shape)
+            print(f"attention_shape={attention_shape} logits_shape={logits_shape}")
             for source_ids, target_ids, pred_ids in zip(
                 batch.source.cpu().tolist(),
                 batch.target_output.cpu().tolist(),
                 predicted_ids.cpu().tolist(),
                 strict=True,
             ):
+                source_text = data.source_vocab.decode(source_ids)
+                target_text = data.target_vocab.decode(target_ids)
+                pred_text = data.target_vocab.decode(pred_ids)
                 print(
-                    f"src='{data.source_vocab.decode(source_ids)}' "
-                    f"target='{data.target_vocab.decode(target_ids)}' "
-                    f"pred='{data.target_vocab.decode(pred_ids)}'"
+                    f"src='{source_text}' "
+                    f"target='{target_text}' "
+                    f"pred='{pred_text}'"
                 )
+                translations.append(
+                    {"source": source_text, "target": target_text, "prediction": pred_text}
+                )
+    artifacts.write_summary(
+        {
+            "dataset": "toy translation",
+            "device": str(device),
+            "source_vocab_size": len(data.source_vocab.id_to_token),
+            "target_vocab_size": len(data.target_vocab.id_to_token),
+            "final": history[-1],
+            "attention_shape": attention_shape,
+            "logits_shape": logits_shape,
+            "translations": translations,
+        }
+    )
 
 
 def _run_epoch(

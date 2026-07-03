@@ -48,6 +48,25 @@ uv run python -m llm_tutor.experiments.train_linear_classifier --epochs 20
 uv run python -m llm_tutor.experiments.train_neural_network_basics --epochs 30
 ```
 
+## 保存实验产物
+
+训练型实验支持可选的 `--output-dir`。传入后，脚本会把本次运行保存成可复盘目录：
+
+```bash
+uv run python -m llm_tutor.experiments.train_mini_gpt \
+  --epochs 2 \
+  --output-dir runs/mini-gpt-smoke
+```
+
+常见文件包括：
+
+- `config.json`：命令、参数和创建时间。
+- `metrics.jsonl`：逐 epoch 或逐阶段指标。
+- `summary.json`：最终指标、生成样例、checkpoint 路径或 policy 结果。
+- `stdout.log`：本次运行的终端输出。
+
+`runs/`、`checkpoints/` 和模型权重文件默认被 `.gitignore` 忽略，适合本地反复试验。
+
 教程正文从 [tutorials/README.md](tutorials/README.md) 开始阅读。
 
 ## 专栏网站

@@ -4,6 +4,11 @@ import argparse
 
 import torch
 
+from llm_tutor.experiments.artifacts import (
+    ExperimentArtifacts,
+    add_artifact_args,
+    args_to_config,
+)
 from llm_tutor.post_training.dpo import dpo_loss, make_policy_pair, make_tiny_preference_batch
 
 PROMPTS = ("say yes", "say no", "say ok")
@@ -16,8 +21,21 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=0.1)
     parser.add_argument("--beta", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    add_artifact_args(parser)
     args = parser.parse_args()
 
+    artifacts = ExperimentArtifacts.create(
+        args.output_dir,
+        experiment_name="train_dpo_bandit",
+        config=args_to_config(args),
+    )
+    with artifacts.capture_stdout():
+        if artifacts.enabled:
+            print(f"artifacts_dir={artifacts.run_dir}")
+        _run(args, artifacts)
+
+
+def _run(args: argparse.Namespace, artifacts: ExperimentArtifacts) -> None:
     torch.manual_seed(args.seed)
     batch = make_tiny_preference_batch()
     policy, reference = make_policy_pair(num_prompts=len(PROMPTS), num_actions=len(ACTIONS))
@@ -35,6 +53,15 @@ def main() -> None:
         optimizer.zero_grad()
         result.loss.backward()
         optimizer.step()
+        artifacts.append_metric(
+            {
+                "phase": "dpo",
+                "epoch": float(epoch),
+                "dpo_loss": result.loss.item(),
+                "pref_acc": result.preference_accuracy.item(),
+                "logit_mean": result.logits.mean().item(),
+            }
+        )
         if epoch == 1 or epoch % 10 == 0 or epoch == args.epochs:
             print(
                 f"epoch={epoch:03d} dpo_loss={result.loss.item():.4f} "
@@ -44,6 +71,7 @@ def main() -> None:
 
     print("\npolicy")
     greedy_actions = policy(batch.prompt_ids).argmax(dim=-1)
+    final_policy = []
     for prompt, action_id, chosen_id, rejected_id in zip(
         PROMPTS,
         greedy_actions.tolist(),
@@ -55,6 +83,36 @@ def main() -> None:
             f"prompt={prompt!r} action={ACTIONS[action_id]!r} "
             f"chosen={ACTIONS[chosen_id]!r} rejected={ACTIONS[rejected_id]!r}"
         )
+        final_policy.append(
+            {
+                "prompt": prompt,
+                "action": ACTIONS[action_id],
+                "chosen": ACTIONS[chosen_id],
+                "rejected": ACTIONS[rejected_id],
+                "selected_chosen": action_id == chosen_id,
+            }
+        )
+    artifacts.write_summary(
+        {
+            "prompts": list(PROMPTS),
+            "actions": list(ACTIONS),
+            "beta": args.beta,
+            "preferences": [
+                {
+                    "prompt": PROMPTS[prompt_id],
+                    "chosen": ACTIONS[chosen_id],
+                    "rejected": ACTIONS[rejected_id],
+                }
+                for prompt_id, chosen_id, rejected_id in zip(
+                    batch.prompt_ids.tolist(),
+                    batch.chosen_actions.tolist(),
+                    batch.rejected_actions.tolist(),
+                    strict=True,
+                )
+            ],
+            "final_policy": final_policy,
+        }
+    )
 
 
 if __name__ == "__main__":

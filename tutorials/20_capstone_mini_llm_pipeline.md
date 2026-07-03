@@ -65,6 +65,16 @@ uv run python -m llm_tutor.experiments.run_capstone_pipeline \
 
 不传 `--checkpoint-path` 时，`--execute` 使用临时路径并自动清理；传入后会写入你指定的位置。
 
+如果希望整条 Capstone 留下可审计产物，使用 `--output-dir`：
+
+```bash
+uv run python -m llm_tutor.experiments.run_capstone_pipeline \
+  --execute \
+  --output-dir runs/capstone-smoke
+```
+
+这时 mini-GPT checkpoint 会保存在 `runs/capstone-smoke/capstone_mini_gpt.pt`，每个支持保存的子阶段会获得自己的子目录，例如 `01_pretrain/`、`02_generate/`、`04_sft/`、`05_ppo/`。父目录的 `summary.json` 会记录每个阶段的命令、目标和退出码。
+
 ## 每个阶段在检查什么
 
 | 阶段 | 数据 | 目标 | loss / 优化信号 | 教学实现 |

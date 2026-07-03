@@ -4,6 +4,11 @@ import argparse
 
 import torch
 
+from llm_tutor.experiments.artifacts import (
+    ExperimentArtifacts,
+    add_artifact_args,
+    args_to_config,
+)
 from llm_tutor.post_training.ppo import TinyPromptPolicy, ppo_clipped_loss, rule_reward
 
 PROMPTS = ("say yes", "say no", "say ok")
@@ -22,8 +27,21 @@ def main() -> None:
     parser.add_argument("--kl-coef", type=float, default=0.05)
     parser.add_argument("--entropy-coef", type=float, default=0.01)
     parser.add_argument("--seed", type=int, default=42)
+    add_artifact_args(parser)
     args = parser.parse_args()
 
+    artifacts = ExperimentArtifacts.create(
+        args.output_dir,
+        experiment_name="train_ppo_bandit",
+        config=args_to_config(args),
+    )
+    with artifacts.capture_stdout():
+        if artifacts.enabled:
+            print(f"artifacts_dir={artifacts.run_dir}")
+        _run(args, artifacts)
+
+
+def _run(args: argparse.Namespace, artifacts: ExperimentArtifacts) -> None:
     torch.manual_seed(args.seed)
     policy = TinyPromptPolicy(num_prompts=len(PROMPTS), num_actions=len(ACTIONS))
     reference_logits = torch.zeros(len(PROMPTS), len(ACTIONS))
@@ -56,9 +74,24 @@ def main() -> None:
             loss.total_loss.backward()
             optimizer.step()
 
+        greedy_actions = policy(prompt_ids).argmax(dim=-1)
+        greedy_reward = rule_reward(greedy_actions, TARGET_ACTIONS).mean().item()
+        artifacts.append_metric(
+            {
+                "phase": "ppo",
+                "epoch": float(epoch),
+                "sampled_reward": rewards.mean().item(),
+                "greedy_reward": greedy_reward,
+                "total_loss": loss.total_loss.item(),
+                "policy_loss": loss.policy_loss.item(),
+                "ratio_min": loss.ratio.min().item(),
+                "ratio_max": loss.ratio.max().item(),
+                "clipped_fraction": loss.clipped_fraction.item(),
+                "kl": loss.kl.item(),
+                "entropy": loss.entropy.item(),
+            }
+        )
         if epoch == 1 or epoch % 10 == 0 or epoch == args.epochs:
-            greedy_actions = policy(prompt_ids).argmax(dim=-1)
-            greedy_reward = rule_reward(greedy_actions, TARGET_ACTIONS).mean().item()
             print(
                 f"epoch={epoch:03d} sampled_reward={rewards.mean().item():+.3f} "
                 f"greedy_reward={greedy_reward:+.3f} "
@@ -72,6 +105,7 @@ def main() -> None:
 
     print("\npolicy")
     greedy_actions = policy(prompt_ids).argmax(dim=-1)
+    final_policy = []
     for prompt, action_id, target_id in zip(
         PROMPTS,
         greedy_actions.tolist(),
@@ -79,6 +113,23 @@ def main() -> None:
         strict=True,
     ):
         print(f"prompt={prompt!r} action={ACTIONS[action_id]!r} target={ACTIONS[target_id]!r}")
+        final_policy.append(
+            {
+                "prompt": prompt,
+                "action": ACTIONS[action_id],
+                "target": ACTIONS[target_id],
+                "is_correct": action_id == target_id,
+            }
+        )
+    artifacts.write_summary(
+        {
+            "prompts": list(PROMPTS),
+            "actions": list(ACTIONS),
+            "target_actions": [ACTIONS[index] for index in TARGET_ACTIONS.tolist()],
+            "final_policy": final_policy,
+            "final_greedy_reward": rule_reward(greedy_actions, TARGET_ACTIONS).mean().item(),
+        }
+    )
 
 
 if __name__ == "__main__":

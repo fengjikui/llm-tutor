@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 
 import torch
 
+from llm_tutor.experiments.artifacts import (
+    ExperimentArtifacts,
+    add_artifact_args,
+    args_to_config,
+)
 from llm_tutor.models.gpt import MiniGPT, MiniGPTConfig
 from llm_tutor.post_training.sft import (
     IGNORE_INDEX,
@@ -23,8 +29,21 @@ def main() -> None:
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--seed", type=int, default=42)
+    add_artifact_args(parser)
     args = parser.parse_args()
 
+    artifacts = ExperimentArtifacts.create(
+        args.output_dir,
+        experiment_name="train_sft",
+        config=args_to_config(args),
+    )
+    with artifacts.capture_stdout():
+        if artifacts.enabled:
+            print(f"artifacts_dir={artifacts.run_dir}")
+        _run(args, artifacts)
+
+
+def _run(args: argparse.Namespace, artifacts: ExperimentArtifacts) -> None:
     torch.manual_seed(args.seed)
     vocab, train_loader = load_tiny_sft_data(block_size=args.block_size, batch_size=args.batch_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -41,8 +60,12 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     print(f"vocab_size={vocab.size} examples={len(train_loader.dataset)}")
+    history: list[dict[str, float]] = []
     for epoch in range(1, args.epochs + 1):
         train_loss = _run_epoch(model, train_loader, device, optimizer)
+        row = {"phase": "sft", "epoch": float(epoch), "sft_loss": train_loss}
+        history.append(row)
+        artifacts.append_metric(row)
         if epoch == 1 or epoch % 10 == 0 or epoch == args.epochs:
             print(f"epoch={epoch:03d} sft_loss={train_loss:.4f}")
 
@@ -50,8 +73,52 @@ def main() -> None:
     prompt = "Instruction: repeat: hi\nResponse: "
     prompt_ids = torch.tensor([vocab.encode(prompt)], dtype=torch.long, device=device)
     generated = model.generate(prompt_ids, max_new_tokens=12, temperature=0.7, top_k=8)
+    generated_text = vocab.decode(generated[0])
     print("\ngeneration")
-    print(vocab.decode(generated[0]))
+    print(generated_text)
+
+    model_path = artifacts.path("sft_model.pt") if artifacts.enabled else None
+    if model_path is not None:
+        torch.save(
+            {
+                "model_state": model.state_dict(),
+                "config": asdict(model.config),
+                "vocab_id_to_token": list(vocab.id_to_token),
+                "epoch": args.epochs,
+                "sft_loss": train_loss,
+                "training_args": {
+                    "epochs": args.epochs,
+                    "batch_size": args.batch_size,
+                    "block_size": args.block_size,
+                    "embed_dim": args.embed_dim,
+                    "num_heads": args.num_heads,
+                    "num_layers": args.num_layers,
+                    "lr": args.lr,
+                    "seed": args.seed,
+                },
+            },
+            model_path,
+        )
+        print(f"model_saved={model_path}")
+
+    artifacts.write_summary(
+        {
+            "dataset": "tiny instruction data",
+            "device": str(device),
+            "vocab_size": vocab.size,
+            "examples": len(train_loader.dataset),
+            "model_config": asdict(model.config),
+            "final": history[-1],
+            "model_path": model_path,
+            "generation": {
+                "prompt": prompt,
+                "max_new_tokens": 12,
+                "temperature": 0.7,
+                "top_k": 8,
+                "text": generated_text,
+            },
+        }
+    )
 
 
 def _run_epoch(
