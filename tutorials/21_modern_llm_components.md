@@ -45,33 +45,6 @@ k = apply_rope(k, cos, sin)
 
 RoPE 常出现在现代 decoder-only LLM 中，因为它和 causal attention 很契合，也比固定绝对位置更适合外推到较长上下文。不过 RoPE 不是“无限长上下文开关”。长上下文能力还会受训练长度、数据、attention 实现、cache 策略和位置缩放方法影响。
 
-## GQA：Query 头很多，Key/Value 头少一点
-
-标准 MHA 里，query、key、value 的 head 数相同：
-
-```text
-q_heads = k_heads = v_heads
-```
-
-推理时，生成每个新 token 都要读取历史 token 的 key/value。上下文越长，KV cache 越大，显存带宽越紧张。GQA 的想法是：保留较多 query heads，但让多个 query heads 共享同一组 key/value heads。
-
-```text
-MHA: q=32, kv=32
-GQA: q=32, kv=8
-MQA: q=32, kv=1
-```
-
-代码里最关键的一步是把 KV head repeat 到 query head 数量：
-
-```python
-from llm_tutor.models.modern_attention import repeat_kv
-
-k = repeat_kv(k, num_query_heads=32)
-v = repeat_kv(v, num_query_heads=32)
-```
-
-GQA 介于 MHA 和 MQA 之间。它通常能明显减少 KV cache，同时比只用一个 KV head 的 MQA 更稳。Llama 3 和 Mistral 7B 都采用了 GQA 方向的设计；Mistral 还结合了 sliding window attention 来降低长上下文推理成本。
-
 ## KV Cache：推理时不要重复算过去
 
 训练时，一整段 token 并行进入模型；推理生成时，模型一次只多生成一个 token。如果每一步都把完整前缀重新计算一遍，会浪费大量计算。
@@ -94,6 +67,35 @@ past_k, past_v = cache.append(new_token_k, new_token_v)
 ```
 
 这就是为什么长对话会吃显存：模型参数占一部分，KV cache 也会占一大部分。对于 batch serving，工程系统还会做 paged KV cache、prefix cache、cache eviction、quantized cache、cache offload 等优化。
+
+先理解 KV Cache，再看 GQA 和 MLA 会更自然：GQA 主要减少要缓存的 K/V head 数量，MLA 则进一步尝试缓存更紧凑的 latent 表示。
+
+## GQA：Query 头很多，Key/Value 头少一点
+
+标准 MHA 里，query、key、value 的 head 数相同：
+
+```text
+q_heads = k_heads = v_heads
+```
+
+有了 KV Cache 的背景，GQA 的动机就很清楚了：推理时生成每个新 token 都要读取历史 token 的 key/value。上下文越长，KV cache 越大，显存带宽越紧张。GQA 的想法是：保留较多 query heads，但让多个 query heads 共享同一组 key/value heads。
+
+```text
+MHA: q=32, kv=32
+GQA: q=32, kv=8
+MQA: q=32, kv=1
+```
+
+代码里最关键的一步是把 KV head repeat 到 query head 数量：
+
+```python
+from llm_tutor.models.modern_attention import repeat_kv
+
+k = repeat_kv(k, num_query_heads=32)
+v = repeat_kv(v, num_query_heads=32)
+```
+
+GQA 介于 MHA 和 MQA 之间。它通常能明显减少 KV cache，同时比只用一个 KV head 的 MQA 更稳。Llama 3 和 Mistral 7B 都采用了 GQA 方向的设计；Mistral 还结合了 sliding window attention 来降低长上下文推理成本。
 
 ## MLA：把 KV Cache 压到 latent 空间
 
@@ -149,8 +151,8 @@ input hidden states
 -> RMSNorm / LayerNorm
 -> q/k/v projection
 -> RoPE on q/k
--> MHA / GQA / MLA attention
 -> KV cache read/write if inference
+-> MHA / GQA / MLA attention over visible K/V
 -> residual
 -> RMSNorm / LayerNorm
 -> MLP / SwiGLU / MoE
