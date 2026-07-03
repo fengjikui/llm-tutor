@@ -509,6 +509,7 @@ def render_chapter_page(
       <span>Jikui Notes · 从梯度下降到 GPT</span>
       <a href="{chapter.github_url}">在 GitHub 查看本章</a>
     </footer>
+    <script src="../code-tools.js"></script>
   </body>
 </html>
 """

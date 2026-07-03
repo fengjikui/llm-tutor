@@ -15,3 +15,8 @@ def test_site_build_renders_lab_entry() -> None:
     assert "本章实践入口" in chapter
     assert "src/llm_tutor/experiments/train_cnn.py" in chapter
     assert "uv run python -m llm_tutor.experiments.train_cnn" in chapter
+    assert '<script src="../code-tools.js"></script>' in chapter
+
+    tools = Path("site/code-tools.js").read_text(encoding="utf-8")
+    assert "code-copy-button" in tools
+    assert "code-theme-button" in tools
