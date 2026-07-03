@@ -47,6 +47,8 @@
 <a class="toc-level-2" href="#下一步">下一步</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-16"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-16">代码和实验从这里开始</strong></div><p>观察 instruction/response 模板、response-only mask 和 SFT loss。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/post_training/sft.py"><code>src/llm_tutor/post_training/sft.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/train_sft.py"><code>src/llm_tutor/experiments/train_sft.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.train_sft --epochs 30</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：instruction/response 模板、response-only label mask、监督微调。</li><li>实验要验证：SFT 仍然是 causal LM loss，只是通常只让回答部分 token 贡献 loss。</li><li>实验不验证：它不是 RLHF，也不能把 tiny 数据集微调成真正可靠的助手。</li><li>跑完重点看：prompt token 的 label 是否被 mask，response token 是否参与 loss，生成格式是否更接近训练样例。</li></ul>
 <p>SFT 是 supervised fine-tuning，通常翻译成监督微调。它的目标不是改变 GPT 的基本结构，而是让模型看到“指令 -&gt; 回答”的样例，从而学会按这种格式输出。</p>

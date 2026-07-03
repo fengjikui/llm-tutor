@@ -49,6 +49,11 @@
 <a class="toc-level-2" href="#常见失败">常见失败</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-06"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-06">代码和实验从这里开始</strong></div><p>用 Fashion-MNIST 图像分类把卷积、图像 shape 和真实验证指标连起来。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/data/vision.py"><code>src/llm_tutor/data/vision.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/models/cnn.py"><code>src/llm_tutor/models/cnn.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/train_cnn.py"><code>src/llm_tutor/experiments/train_cnn.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.train_cnn --epochs 2
+
+uv run python -m llm_tutor.experiments.train_cnn --epochs 1 --train-limit 512 --val-limit 128 --test-limit 128</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：图像张量、卷积核、局部感受野、参数共享、池化。</li><li>实验要验证：当输入从表格变成图像时，训练闭环不变，但模型结构要尊重数据的空间结构。</li><li>实验不验证：它不是视觉方向完整入门，也不能说明 Fashion-MNIST 高分等于真实视觉可靠。</li><li>跑完重点看：输入 shape 是否是 <code>[batch, channels, height, width]</code>，<code>val_acc</code>/<code>macro_f1</code> 是否随训练改善，第一次运行是否成功缓存数据。</li></ul>
 <p>前几章处理的是表格特征：</p>

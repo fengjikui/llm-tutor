@@ -49,6 +49,9 @@
 <a class="toc-level-2" href="#和-attention-的关系">和 Attention 的关系</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-09"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-09">代码和实验从这里开始</strong></div><p>从分类任务过渡到序列生成，观察 source、target 和 prediction 的对齐。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/data/translation.py"><code>src/llm_tutor/data/translation.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/models/seq2seq.py"><code>src/llm_tutor/models/seq2seq.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/train_seq2seq_translation.py"><code>src/llm_tutor/experiments/train_seq2seq_translation.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.train_seq2seq_translation --epochs 80</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：encoder-decoder、BOS/EOS、teacher forcing、自回归解码、序列级 cross entropy。</li><li>实验要验证：模型不再只输出一个类别，而是可以一步步生成一个目标序列。</li><li>实验不验证：它不是正式机器翻译评测，也不能代表真实语料上的翻译能力。</li><li>跑完重点看：source/target/prediction 三者是否对齐，EOS 是否正常结束，loss 是否按目标 token 计算。</li></ul>
 <p>前几章的序列模型做的是分类：</p>

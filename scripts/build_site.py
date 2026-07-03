@@ -11,7 +11,16 @@ ROOT = Path(__file__).resolve().parents[1]
 TUTORIALS_DIR = ROOT / "tutorials"
 SITE_DIR = ROOT / "site"
 CHAPTERS_DIR = SITE_DIR / "chapters"
+REPO_BLOB_URL = "https://github.com/fengjikui/llm-tutor/blob/main"
 REPO_TUTORIALS_URL = "https://github.com/fengjikui/llm-tutor/blob/main/tutorials"
+
+
+@dataclass(frozen=True)
+class Lab:
+    code_paths: list[str]
+    commands: list[str]
+    note: str
+    artifact_hint: bool = True
 
 
 @dataclass(frozen=True)
@@ -28,6 +37,7 @@ class Chapter:
     phase_label: str
     tags: list[str]
     body: str
+    lab: Lab | None
 
     @property
     def url(self) -> str:
@@ -71,6 +81,219 @@ TAGS_BY_NUMBER = {
     21: ["RoPE", "GQA", "MLA"],
     22: ["ClipCap", "Qwen3-VL", "VLA"],
     23: ["DDPM", "Stable Diffusion", "DiT"],
+}
+
+
+LABS_BY_NUMBER = {
+    1: Lab(
+        code_paths=[
+            "src/llm_tutor/data/tabular.py",
+            "src/llm_tutor/experiments/train_linear_classifier.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_linear_classifier --epochs 20"],
+        note="从真实表格分类数据开始，先跑通 data -> model -> loss -> optimizer -> metrics。",
+    ),
+    2: Lab(
+        code_paths=[
+            "src/llm_tutor/foundations/manual_gradient_descent.py",
+            "src/llm_tutor/experiments/manual_gradient_descent.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.manual_gradient_descent"],
+        note="用手写梯度和 autograd 对照，观察 loss、梯度和参数更新方向。",
+        artifact_hint=False,
+    ),
+    3: Lab(
+        code_paths=[
+            "src/llm_tutor/training/loop.py",
+            "src/llm_tutor/experiments/train_linear_classifier.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_linear_classifier --epochs 5"],
+        note="把后面章节都会复用的 PyTorch 训练循环拆开看清楚。",
+    ),
+    4: Lab(
+        code_paths=[
+            "src/llm_tutor/models/feedforward.py",
+            "src/llm_tutor/experiments/train_neural_network_basics.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_neural_network_basics --epochs 30"],
+        note="比较线性模型和带隐藏层的神经网络，理解非线性表示能力。",
+    ),
+    5: Lab(
+        code_paths=[
+            "src/llm_tutor/models/feedforward.py",
+            "src/llm_tutor/experiments/compare_training_strategies.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.compare_training_strategies --epochs 12"],
+        note="在同一任务上比较学习率、优化器、weight decay 和 Dropout 对训练曲线的影响。",
+    ),
+    6: Lab(
+        code_paths=[
+            "src/llm_tutor/data/vision.py",
+            "src/llm_tutor/models/cnn.py",
+            "src/llm_tutor/experiments/train_cnn.py",
+        ],
+        commands=[
+            "uv run python -m llm_tutor.experiments.train_cnn --epochs 2",
+            (
+                "uv run python -m llm_tutor.experiments.train_cnn "
+                "--epochs 1 --train-limit 512 --val-limit 128 --test-limit 128"
+            ),
+        ],
+        note="用 Fashion-MNIST 图像分类把卷积、图像 shape 和真实验证指标连起来。",
+    ),
+    7: Lab(
+        code_paths=[
+            "src/llm_tutor/data/names.py",
+            "src/llm_tutor/models/rnn.py",
+            "src/llm_tutor/experiments/train_rnn_classifier.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_rnn_classifier --epochs 20"],
+        note="用字符级姓名分类理解时间步、hidden state 和序列分类。",
+    ),
+    8: Lab(
+        code_paths=[
+            "src/llm_tutor/models/rnn.py",
+            "src/llm_tutor/experiments/compare_recurrent_cells.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.compare_recurrent_cells --epochs 12"],
+        note="在同一数据集上比较 RNN、GRU 和 LSTM 的收敛与验证指标。",
+    ),
+    9: Lab(
+        code_paths=[
+            "src/llm_tutor/data/translation.py",
+            "src/llm_tutor/models/seq2seq.py",
+            "src/llm_tutor/experiments/train_seq2seq_translation.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_seq2seq_translation --epochs 80"],
+        note="从分类任务过渡到序列生成，观察 source、target 和 prediction 的对齐。",
+    ),
+    10: Lab(
+        code_paths=[
+            "src/llm_tutor/models/seq2seq.py",
+            "src/llm_tutor/experiments/train_attention_seq2seq.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_attention_seq2seq --epochs 80"],
+        note="给 Seq2Seq 加上 additive attention，重点看 attention 权重和生成结果。",
+    ),
+    11: Lab(
+        code_paths=[
+            "src/llm_tutor/models/attention.py",
+            "src/llm_tutor/experiments/inspect_self_attention.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.inspect_self_attention"],
+        note="不训练模型，专门检查 Q/K/V、padding mask 和 causal mask 的 shape。",
+        artifact_hint=False,
+    ),
+    12: Lab(
+        code_paths=[
+            "src/llm_tutor/models/transformer.py",
+            "src/llm_tutor/experiments/inspect_transformer_block.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.inspect_transformer_block"],
+        note="把 self-attention、LayerNorm、residual 和 MLP 组装成一个 GPT block。",
+        artifact_hint=False,
+    ),
+    13: Lab(
+        code_paths=[
+            "src/llm_tutor/models/gpt.py",
+            "src/llm_tutor/experiments/train_mini_gpt.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_mini_gpt --epochs 20"],
+        note="从零训练字符级 mini-GPT，观察 next-token loss 和生成样例。",
+    ),
+    14: Lab(
+        code_paths=[
+            "src/llm_tutor/models/gpt.py",
+            "src/llm_tutor/experiments/inspect_gpt_loss.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.inspect_gpt_loss"],
+        note="用显微镜实验检查 x/y 错位、logits shape、逐 token loss 和 causal mask。",
+        artifact_hint=False,
+    ),
+    15: Lab(
+        code_paths=[
+            "src/llm_tutor/experiments/train_mini_gpt.py",
+            "src/llm_tutor/experiments/generate_with_mini_gpt.py",
+            "src/llm_tutor/generation/sampling.py",
+        ],
+        commands=[
+            (
+                "uv run python -m llm_tutor.experiments.train_mini_gpt "
+                "--epochs 2 --output-dir runs/mini-gpt-smoke"
+            ),
+            (
+                "uv run python -m llm_tutor.experiments.generate_with_mini_gpt "
+                "--checkpoint-path runs/mini-gpt-smoke/mini_gpt.pt"
+            ),
+        ],
+        note="把 mini-GPT 训练变成可保存、可加载、可复盘的实验。",
+    ),
+    16: Lab(
+        code_paths=[
+            "src/llm_tutor/post_training/sft.py",
+            "src/llm_tutor/experiments/train_sft.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_sft --epochs 30"],
+        note="观察 instruction/response 模板、response-only mask 和 SFT loss。",
+    ),
+    17: Lab(
+        code_paths=[
+            "src/llm_tutor/post_training/ppo.py",
+            "src/llm_tutor/experiments/train_ppo_bandit.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_ppo_bandit --epochs 30"],
+        note="用 bandit 显微镜看 PPO 的 ratio、clipping、KL 和 reward 变化。",
+    ),
+    18: Lab(
+        code_paths=[
+            "src/llm_tutor/post_training/dpo.py",
+            "src/llm_tutor/experiments/train_dpo_bandit.py",
+        ],
+        commands=["uv run python -m llm_tutor.experiments.train_dpo_bandit --epochs 40"],
+        note="从 chosen/rejected 偏好对出发，观察 policy 相对 reference 的偏好移动。",
+    ),
+    19: Lab(
+        code_paths=[
+            "src/llm_tutor/post_training/grpo.py",
+            "src/llm_tutor/experiments/train_grpo_bandit.py",
+        ],
+        commands=[
+            "uv run python -m llm_tutor.experiments.train_grpo_bandit --epochs 40 --group-size 4"
+        ],
+        note="用 group sampling 和 rule-based reward 理解组内相对 advantage。",
+    ),
+    20: Lab(
+        code_paths=[
+            "src/llm_tutor/capstone/pipeline.py",
+            "src/llm_tutor/experiments/run_capstone_pipeline.py",
+        ],
+        commands=[
+            "uv run python -m llm_tutor.experiments.run_capstone_pipeline",
+            "uv run python -m llm_tutor.experiments.run_capstone_pipeline --execute",
+        ],
+        note="把 mini-GPT、SFT、PPO、DPO、GRPO 的教学实验放进一条可运行路线图。",
+    ),
+    21: Lab(
+        code_paths=[
+            "src/llm_tutor/models/modern_attention.py",
+            "tests/test_modern_attention.py",
+        ],
+        commands=["uv run pytest tests/test_modern_attention.py -q"],
+        note="本章以可读实现和 shape 测试为主，帮助读懂 RoPE、KV Cache、GQA 和 MLA。",
+        artifact_hint=False,
+    ),
+    22: Lab(
+        code_paths=[],
+        commands=[],
+        note="本章是多模态概念扩展，当前不要求读者训练 VLM；后续可单独补成 GPU Lab。",
+        artifact_hint=False,
+    ),
+    23: Lab(
+        code_paths=[],
+        commands=[],
+        note="本章是 diffusion 概念扩展，当前不要求读者训练生图模型；后续可单独补采样实验。",
+        artifact_hint=False,
+    ),
 }
 
 
@@ -132,6 +355,7 @@ def load_chapters() -> list[Chapter]:
                 phase_label=PHASES[phase],
                 tags=TAGS_BY_NUMBER.get(number, []),
                 body=body.strip(),
+                lab=LABS_BY_NUMBER.get(number),
             )
         )
     return chapters
@@ -187,6 +411,18 @@ def chapter_to_data(chapter: Chapter) -> dict[str, Any]:
         "file": chapter.source_path.name,
         "url": chapter.url,
         "githubUrl": chapter.github_url,
+        "lab": lab_to_data(chapter.lab),
+    }
+
+
+def lab_to_data(lab: Lab | None) -> dict[str, Any] | None:
+    if lab is None:
+        return None
+    return {
+        "codePaths": lab.code_paths,
+        "commands": lab.commands,
+        "note": lab.note,
+        "artifactHint": lab.artifact_hint,
     }
 
 
@@ -196,6 +432,7 @@ def render_chapter_page(
     next_chapter: Chapter | None,
 ) -> str:
     rendered = render_markdown(chapter.body)
+    lab_panel = render_lab_panel(chapter)
     toc = table_of_contents(chapter.body)
     previous_link = (
         nav_link(previous, "上一篇")
@@ -257,6 +494,7 @@ def render_chapter_page(
           <nav>{toc_html}</nav>
         </aside>
         <article class="markdown-body">
+          {lab_panel}
           {rendered}
         </article>
       </section>
@@ -274,6 +512,58 @@ def render_chapter_page(
   </body>
 </html>
 """
+
+
+def render_lab_panel(chapter: Chapter) -> str:
+    lab = chapter.lab
+    if lab is None:
+        return ""
+
+    sections: list[str] = []
+    if lab.code_paths:
+        links = "\n".join(
+            f'<a href="{escape_attr(github_blob_url(path))}"><code>{escape_text(path)}</code></a>'
+            for path in lab.code_paths
+        )
+        sections.append(
+            '<div class="lab-column">'
+            '<span class="lab-label">源码入口</span>'
+            f'<div class="lab-links">{links}</div>'
+            "</div>"
+        )
+
+    if lab.commands:
+        commands = escape_text("\n\n".join(lab.commands))
+        sections.append(
+            '<div class="lab-column lab-column-command">'
+            '<span class="lab-label">运行命令</span>'
+            f'<pre class="lab-command"><code>{commands}</code></pre>'
+            "</div>"
+        )
+
+    artifact_hint = ""
+    if lab.artifact_hint:
+        artifact_hint = (
+            '<p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，'
+            "可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p>"
+        )
+
+    grid = f'<div class="lab-grid">{"".join(sections)}</div>' if sections else ""
+    return (
+        f'<section class="lab-panel" aria-labelledby="lab-title-{chapter.number:02d}">'
+        '<div class="lab-panel-head">'
+        "<span>本章实践入口</span>"
+        f'<strong id="lab-title-{chapter.number:02d}">代码和实验从这里开始</strong>'
+        "</div>"
+        f"<p>{escape_text(lab.note)}</p>"
+        f"{grid}"
+        f"{artifact_hint}"
+        "</section>"
+    )
+
+
+def github_blob_url(path: str) -> str:
+    return f"{REPO_BLOB_URL}/{path}"
 
 
 def nav_link(chapter: Chapter, label: str) -> str:

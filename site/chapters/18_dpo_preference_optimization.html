@@ -48,6 +48,8 @@
 <a class="toc-level-2" href="#下一步">下一步</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-18"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-18">代码和实验从这里开始</strong></div><p>从 chosen/rejected 偏好对出发，观察 policy 相对 reference 的偏好移动。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/post_training/dpo.py"><code>src/llm_tutor/post_training/dpo.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/train_dpo_bandit.py"><code>src/llm_tutor/experiments/train_dpo_bandit.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.train_dpo_bandit --epochs 40</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：chosen/rejected、reference policy、log-ratio、DPO loss。</li><li>实验要验证：不用在线采样 reward，也可以直接从偏好对里学习“更偏向 chosen”。</li><li>实验不验证：它不是完整偏好数据训练流程，也没有对长回答 token log probability 求和。</li><li>跑完重点看：<code>pref_acc</code> 是否提高，policy 相对 reference 是否更偏 chosen，loss 是否随训练下降。</li></ul>
 <p>DPO 是 Direct Preference Optimization。它常被看作 PPO 式 RLHF 的一个更简单替代方案。</p>

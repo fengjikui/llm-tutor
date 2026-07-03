@@ -50,6 +50,7 @@
 <a class="toc-level-2" href="#参考">参考</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-22"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-22">代码和实验从这里开始</strong></div><p>本章是多模态概念扩展，当前不要求读者训练 VLM；后续可单独补成 GPU Lab。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：ViT patch token、图文对比学习、ClipCap/prefix mapping、captioning loss、Q-Former、visual projector、visual instruction tuning、动态分辨率、VLA、encoder-free multimodal。</li><li>本章要解决：读者看到现代多模态模型时，知道“图片怎么进入 LLM”。</li><li>本章不验证：不训练 VLM，不跑图像问答 benchmark。</li><li>看完重点：多模态模型不是把图片塞进 tokenizer，而是先把图片编码成视觉 token，再用投影/交叉注意力/对齐训练接到语言空间。</li></ul>
 <p>如果前 21 章讲的是“文本 token 进入 Transformer”，多模态主线就是：</p>

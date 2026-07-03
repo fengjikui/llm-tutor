@@ -50,6 +50,7 @@
 <a class="toc-level-2" href="#参考">参考</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-23"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-23">代码和实验从这里开始</strong></div><p>本章是 diffusion 概念扩展，当前不要求读者训练生图模型；后续可单独补采样实验。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：DDPM、forward noising、reverse denoising、noise prediction、latent diffusion、text conditioning、classifier-free guidance、DiT。</li><li>本章要解决：读者知道生图模型为什么不是 GPT 式从左到右生成，而是从噪声一步步去噪。</li><li>本章不验证：不训练生图模型，不跑 GPU 采样实验。</li><li>看完重点：Stable Diffusion 这类系统由 VAE、text encoder、denoiser、scheduler 组成，不只是一个大 U-Net。</li></ul>
 <p>语言模型生成文本时是自回归的：</p>

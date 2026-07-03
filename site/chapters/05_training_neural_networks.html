@@ -50,6 +50,8 @@
 <a class="toc-level-2" href="#常见失败">常见失败</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-05"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-05">代码和实验从这里开始</strong></div><p>在同一任务上比较学习率、优化器、weight decay 和 Dropout 对训练曲线的影响。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/models/feedforward.py"><code>src/llm_tutor/models/feedforward.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/compare_training_strategies.py"><code>src/llm_tutor/experiments/compare_training_strategies.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.compare_training_strategies --epochs 12</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：训练稳定性、学习率、batch size、正则化、过拟合和欠拟合。</li><li>实验要验证：同一个模型结构下，训练配置会显著影响 loss 曲线和泛化表现。</li><li>实验不验证：它不是调参秘籍，也不能保证某组超参数在所有任务上最好。</li><li>跑完重点看：train/val 曲线是否一起下降，是否出现训练集好但验证集差，以及不同配置的最终测试指标。</li></ul>
 <p>到目前为止，我们已经知道神经网络的基本训练闭环：</p>

@@ -49,6 +49,8 @@
 <a class="toc-level-2" href="#下一步">下一步</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-17"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-17">代码和实验从这里开始</strong></div><p>用 bandit 显微镜看 PPO 的 ratio、clipping、KL 和 reward 变化。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/post_training/ppo.py"><code>src/llm_tutor/post_training/ppo.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/train_ppo_bandit.py"><code>src/llm_tutor/experiments/train_ppo_bandit.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.train_ppo_bandit --epochs 30</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：policy、reward、old policy、ratio、clipping、KL penalty。</li><li>实验要验证：PPO 如何用 reward 鼓励更好的 action，同时用 clipping/KL 限制 policy 一步改得太猛。</li><li>实验不验证：它不是完整 RLHF 系统，也没有训练语言模型生成长文本。</li><li>跑完重点看：平均 reward 是否上升，policy 是否偏向高 reward action，KL/ratio 是否提醒更新幅度。</li></ul>
 <p>PPO 是 RLHF 里最经典的一类优化器。真实 RLHF 会让语言模型生成回答，再用 reward model 打分，并用 PPO 更新 policy。</p>

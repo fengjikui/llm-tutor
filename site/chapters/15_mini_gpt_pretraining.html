@@ -49,6 +49,11 @@
 <a class="toc-level-2" href="#下一步">下一步</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-15"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-15">代码和实验从这里开始</strong></div><p>把 mini-GPT 训练变成可保存、可加载、可复盘的实验。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/train_mini_gpt.py"><code>src/llm_tutor/experiments/train_mini_gpt.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/experiments/generate_with_mini_gpt.py"><code>src/llm_tutor/experiments/generate_with_mini_gpt.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/generation/sampling.py"><code>src/llm_tutor/generation/sampling.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run python -m llm_tutor.experiments.train_mini_gpt --epochs 2 --output-dir runs/mini-gpt-smoke
+
+uv run python -m llm_tutor.experiments.generate_with_mini_gpt --checkpoint-path runs/mini-gpt-smoke/mini_gpt.pt</code></pre></div></div><p class="lab-hint">训练型脚本通常支持 <code>--output-dir</code>，可以把配置、指标、日志和模型产物保存到 <code>runs/</code> 下，便于复盘。</p></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：validation loss、checkpoint、梯度裁剪、temperature/top-k/top-p 采样。</li><li>实验要验证：mini-GPT 的训练结果可以保存、加载、生成，并通过采样参数观察输出变化。</li><li>实验不验证：它不是大模型预训练工程，也不覆盖分布式训练、混合精度或数据管线。</li><li>跑完重点看：train/val loss、checkpoint 路径、重新加载后能否生成，以及固定 prompt 下采样参数改变带来的差异。</li></ul>
 <p>第 13、14 章已经讲清楚了 GPT 的结构和 loss。第 15 章开始补一点训练工程。</p>

@@ -49,6 +49,8 @@
 <a class="toc-level-2" href="#参考">参考</a></nav>
         </aside>
         <article class="markdown-body">
+          <section class="lab-panel" aria-labelledby="lab-title-21"><div class="lab-panel-head"><span>本章实践入口</span><strong id="lab-title-21">代码和实验从这里开始</strong></div><p>本章以可读实现和 shape 测试为主，帮助读懂 RoPE、KV Cache、GQA 和 MLA。</p><div class="lab-grid"><div class="lab-column"><span class="lab-label">源码入口</span><div class="lab-links"><a href="https://github.com/fengjikui/llm-tutor/blob/main/src/llm_tutor/models/modern_attention.py"><code>src/llm_tutor/models/modern_attention.py</code></a>
+<a href="https://github.com/fengjikui/llm-tutor/blob/main/tests/test_modern_attention.py"><code>tests/test_modern_attention.py</code></a></div></div><div class="lab-column lab-column-command"><span class="lab-label">运行命令</span><pre class="lab-command"><code>uv run pytest tests/test_modern_attention.py -q</code></pre></div></div></section>
           <h2 id="本章学习契约">本章学习契约</h2>
 <ul><li>新增概念：RoPE、GQA/MQA、MLA、稀疏注意力、FlashAttention、KV Cache、prefill/decode。</li><li>本章要解决：读者看 Llama、Mistral、Qwen、DeepSeek 这类现代开源模型代码时，知道那些陌生组件在解决什么问题。</li><li>本章不验证：不做真实训练，也不复刻厂商 CUDA kernel；代码只是能读懂 shape 和数据流的教育版实现。</li><li>看完重点：哪些组件改变模型结构，哪些组件主要优化推理速度，哪些组件主要优化显存和带宽。</li></ul>
 <p>前面第 11-15 章使用的是教育版 GPT：绝对位置编码、标准 multi-head attention、简单 causal mask。真实厂商模型通常不会这么朴素。现代 LLM 的很多改动不是为了“让 Transformer 变得神秘”，而是围绕三个压力点展开：</p>
